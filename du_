@@ -43,7 +43,7 @@ case $1 in
         echo "graph_category disk"
         if [ ${PATH1} ]; then
             echo "path1.label ${PATH1}"
-            echo "path1.draw STACK"
+            echo "path1.draw AREA"
         fi
 
         if [ ${PATH2} ]; then
