@@ -1,0 +1,56 @@
+#!/bin/bash
+
+function get_size() {
+    if [ $# != 2 ]; then
+        return
+    fi
+
+    PATH=$1
+    if [ "${PATH}" ]; then
+        SIZE=$(/usr/bin/du -s ${PATH} | /usr/bin/cut -f 1)
+        echo "${2}.value ${SIZE}"
+    fi
+}
+
+case $1 in
+    config)
+        echo "graph_title Per-Folder disk usage (profile $(basename $0))"
+        echo "graph_vlabel size"
+        echo "graph_args --base 1024 -l 0"
+        echo "graph_category disk"
+        if [ ${PATH1} ]; then
+            echo "path1.label ${PATH1}"
+            echo "path1.draw STACK"
+        fi
+
+        if [ ${PATH2} ]; then
+            echo "path2.label ${PATH2}"
+            echo "path2.draw STACK"
+        fi
+
+
+        if [ ${PATH3} ]; then
+            echo "path3.label ${PATH3}"
+            echo "path3.draw STACK"
+        fi
+
+
+        if [ ${PATH4} ]; then
+            echo "path4.label ${PATH4}"
+            echo "path4.draw STACK"
+        fi
+
+
+        if [ ${PATH5} ]; then
+            echo "path5.label ${PATH5}"
+            echo "path5.draw STACK"
+        fi
+
+    exit 0;;
+esac
+
+get_size ${PATH1} "path1"
+get_size ${PATH2} "path2"
+get_size ${PATH3} "path3"
+get_size ${PATH4} "path4"
+get_size ${PATH5} "path5"
