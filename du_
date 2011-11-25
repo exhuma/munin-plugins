@@ -30,7 +30,7 @@ function get_size() {
 
     PATH=$1
     if [ "${PATH}" ]; then
-        SIZE=$(/usr/bin/du -s ${PATH} | /usr/bin/cut -f 1)
+        SIZE=$(/usr/bin/du -bs ${PATH} | /usr/bin/cut -f 1)
         echo "${2}.value ${SIZE}"
     fi
 }
