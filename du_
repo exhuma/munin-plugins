@@ -1,5 +1,28 @@
 #!/bin/bash
 
+# Graphs disk usage of up to five paths. Any more might make the graph
+# unreadable. To graph more paths, you should create multiple profiles
+#
+# Usage
+# =====
+#
+# - put this script-file somewhere and make it executable
+#
+# - create a symlink to your munin-plugins folder (appending a profile name)::
+#
+#       ln -s <path/to/du_> </path/to/munin-plugins/du_profilename>
+#
+# - write a profile config for this plugin::
+#
+#       [du_system]
+#       user root
+#       env.PATH1 /var/cache/apt-proxy
+#       env.PATH2 /var/log
+#
+# Remember: You can only specify up to 5 paths. For more paths you need to
+# link a new profile, and create a corresponding config.
+#
+
 function get_size() {
     if [ $# != 2 ]; then
         return
