@@ -20,9 +20,12 @@
 #       env.PATH2 /var/log
 #
 # - Optionally, you can define a maximum value (in bytes)::
+#
 #       [du_profilename]
 #       ...
 #       env.PATH_MAX 1234567890
+#
+#   This will simply draw a horizontal rule in the graph.
 #
 # Remember: You can only specify up to 5 paths. For more paths you need to
 # link a new profile, and create a corresponding config.
