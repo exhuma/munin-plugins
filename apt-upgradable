@@ -9,6 +9,22 @@
 APTITUDE=${aptitude_path:-/usr/bin/aptitude}
 UPG_COLOR=${upgrades_color:-00ff00}
 ESS_COLOR=${essential_color:-ff0000}
+IMP_COLOR=${important_color:-000000}
+IMPORTANT_PKGS=${important:-""}
+ARR_IMPORTANT=($IMPORTANT_PKGS)
+
+function in_array() {
+   local x
+   ENTRY=$1
+   shift 1
+   ARRAY=( "$@" )
+   [ -z "${ARRAY}" ] && return 1
+   [ -z "${ENTRY}" ] && return 1
+   for x in ${ARRAY[@]}; do
+      [ "${x}" == "${ENTRY}" ] && return 0
+   done
+   return 1
+}
 
 case $1 in
     autoconf)
@@ -30,6 +46,12 @@ case $1 in
         echo "essential.label Essential upgrades"
         echo "essential.draw STACK"
         echo "essential.colour ${ESS_COLOR}"
+        if [ "${#ARR_IMPORTANT[@]}" -ne 0 ]; then
+            echo "important.label Important upgrades"
+            echo "important.draw LINE"
+            echo "important.warning 0:0"
+            echo "important.colour ${IMP_COLOR}"
+        fi
     exit 0;;
 esac
 
@@ -39,3 +61,14 @@ UPGRADES=$(${APTITUDE} search "?and(?and(?not(?automatic), ?upgradable), ?not(?e
 echo "essential.value $ESSENTIAL"
 echo "upgrades.value $UPGRADES"
 
+if [ "${#ARR_IMPORTANT[@]}" -ne 0 ]; then
+    NUM_IMPORTANT=0
+    for pkg in $($APTITUDE -F "%p" search ~U); do
+        in_array ${pkg} "${ARR_IMPORTANT[@]}"
+        RET=$?
+        if [ "${RET}" -eq 0 ]; then
+            NUM_IMPORTANT=$(($NUM_IMPORTANT+1))
+        fi
+    done
+    echo "important.value $NUM_IMPORTANT"
+fi

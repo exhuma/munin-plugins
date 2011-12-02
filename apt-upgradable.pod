@@ -29,12 +29,9 @@ apt_all
 
 This plugin graphs pending upgrades separated by I<section>. C<apt-upgradable>
 groups them by importance. Currently only the groups "essential" and "normal"
-are available. I plan to add the option to manually specify "important"
-packages.
+and "important" are available.
 
 =back
-
-
 
 =head1 CONFIGURATION
 
@@ -50,12 +47,20 @@ not available in that location, you can override it with the config variable
 You can change the colors if you want using 'essential_color' and
 'upgrades_color'
 
+Additionally, it's possible to manually specify a list of packages which are
+considered important for this system. The variables for this are: C<important>
+and C<important_color>. This is a simple space separated list of package names.
+
+Having non-zero important packages is considered a warning!
+
 Here is a full config example:
 
     [apt-upgradable]
         env.aptitude_path /usr/local/sbin/aptitude
         env.essential_color 0000ff
         env.upgrades_color ffff00
+        env.important postgresql apache2
+        env.important_color 000000
 
 =head1 INTERPRETATION
 
