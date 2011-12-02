@@ -1,0 +1,82 @@
+=head1 NAME
+
+apt-upgradable - Yet another munin plugin to monitor pending upgrades using apt
+
+=head1 APPLICABLE SYSTEMS
+
+Linux servers using the apt package manager with aptitude installed (Ubuntu and
+Debian derivatives mostly)
+
+=head1 DESCRIPTION
+
+Comparison to the other default munin plugins `apt` and `apt_all`. First, both
+use plain C<apt> to determine the upgrades whereas this plugin uses
+C<aptitude>. The reason to use aptitude was because of it's useful search
+syntax, which simplified the plugin.
+
+=over
+
+=item *
+
+apt
+
+This plugin does not generate a graph. It's only used to generate warnings.
+
+
+=item *
+
+apt_all
+
+This plugin graphs pending upgrades separated by I<section>. C<apt-upgradable>
+groups them by importance. Currently only the groups "essential" and "normal"
+are available. I plan to add the option to manually specify "important"
+packages.
+
+=back
+
+
+
+=head1 CONFIGURATION
+
+B<NOTE>: You may need to schedule updates of apt (apt update) to get the proper
+values. On Ubuntu systems this is enabled by default!
+
+No configuration is required by default. All parameters are optional.
+
+The plugin assumes that aptitude is available under /usr/bin/aptitude. If it's
+not available in that location, you can override it with the config variable
+'aptitude_path'
+
+You can change the colors if you want using 'essential_color' and
+'upgrades_color'
+
+Here is a full config example:
+
+    [apt-upgradable]
+        env.aptitude_path /usr/local/sbin/aptitude
+        env.essential_color 0000ff
+        env.upgrades_color ffff00
+
+=head1 INTERPRETATION
+
+The graph shows packages that can be upgraded on your system. In general you
+would want all your packages at the newest version, as this value is
+increasing, you would want to plan an upgrade procedure.
+
+=head1 MAGIC MARKERS
+
+  #%# family=auto
+  #%# capabilities=autoconf
+
+=head1 BUGS
+
+None known.
+
+=head1 AUTHOR
+
+Michel Albert <michel % albert.lu>
+
+=head1 LICENSE
+
+GPLv2
+
