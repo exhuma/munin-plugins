@@ -1,0 +1,55 @@
+#!/bin/bash
+#
+# For more information either run `munindoc http-monitor` or read
+# `http-monitor.pod`
+#
+#%# family=auto
+#%# capabilities=autoconf
+
+CURL=${curl_path:-/usr/bin/curl}
+URLS=${urls:-""}
+ARR_URLS=($URLS)
+
+case $1 in
+    autoconf)
+        if [ -x ${CURL} ] ; then
+            echo "yes"
+        else
+            echo "no ('${CURL}' is not executable. You can override the path using the 'curl_path' environment variable)!"
+        fi
+        exit 0;;
+    config)
+        echo "graph_title Web Monitor"
+        echo "graph_vlabel state"
+        echo "graph_category web"
+        echo "graph_printf %3.0lf"
+        echo "graph_args --base 1000 --lower-limit 0"
+        if [ "${#ARR_URLS[@]}" -ne 0 ]; then
+            idx=0
+            for url in ${ARR_URLS[@]}; do
+                printf "codes%02d.label %s\n" ${idx} ${url}
+                printf "codes%02d.draw LINE\n" ${idx}
+                printf "codes%02d.warning 399\n" ${idx}
+                printf "codes%02d.critical 499\n" ${idx}
+                idx=$(($idx+1))
+            done
+        fi
+    exit 0;;
+esac
+
+if [ "${#ARR_URLS[@]}" -ne 0 ]; then
+    idx=0
+    for url in ${ARR_URLS[@]}; do
+        CODE=$(curl -o /dev/null -s -w "%{http_code}" ${url})
+        if [[ "${CODE}" == "000" ]]; then
+            # curl issues a 000 error when it completely unable to reach the
+            # URL (f.ex.: DNS error). In order to trigger munin errors, we
+            # re-code this to 999
+            CODE=999
+        fi
+
+        printf "codes%02d.value %d\n" ${idx} ${CODE}
+        idx=$(($idx+1))
+    done
+fi
+

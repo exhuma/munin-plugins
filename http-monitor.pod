@@ -1,0 +1,55 @@
+=head1 NAME
+
+http-monitor - Monitor HTTP status codes on a set of user-defined URLs
+
+=head1 APPLICABLE SYSTEMS
+
+Any system with C<curl> installed and I<from> which you would like to monitor
+HTTP services.
+
+=head1 DESCRIPTION
+
+This plugin will send HTTP GET commands to the specified URLs using C<curl> and
+graph the status codes. All codes below 400 are considered normal and won't be
+reported. All codes between 400 and 499 signify that the service is running,
+but an application-level error occurred. This is considered a warning. All
+codes starting at 500 are considered critical errors. If the URL is completely
+unreachable, C<curl> responds with code C<000>. In order to trigger the munin
+alert, this has been recoded to C<999>.
+
+=head1 CONFIGURATION
+
+The plugin assumes that curl is available under /usr/bin/curl. If it's not
+available in that location, you can override it with the config variable
+'curl_path'
+
+To set the urls to monitor, specify C<urls>. The list should be
+space-separated.
+
+Here is a config example (including the optional values):
+
+    [http-monitor]
+        env.curl_path /usr/local/sbin/curl
+        env.urls http://domain.tld/app1 http://www.google.com http://domain.tld/path+with%20spaces
+
+=head1 INTERPRETATION
+
+See "Description" above.
+
+=head1 MAGIC MARKERS
+
+  #%# family=auto
+  #%# capabilities=autoconf
+
+=head1 BUGS
+
+None known.
+
+=head1 AUTHOR
+
+Michel Albert <michel % albert.lu>
+
+=head1 LICENSE
+
+GPLv2
+
