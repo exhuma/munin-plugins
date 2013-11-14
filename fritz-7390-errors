@@ -139,7 +139,7 @@ class Application(object):
             crc_fritz_per_min.draw STACK
             fec_dsl_per_min.info DSL recoverable errors per minute (FEC)
             fec_dsl_per_min.label dsl_fec
-            fec_dsl_per_min.draw STACK
+            fec_dsl_per_min.draw AREA
             crc_dsl_per_min.info DSL unrecoverable errors per minute (CRC)
             crc_dsl_per_min.label dsl_crc
             crc_dsl_per_min.draw STACK"""))
