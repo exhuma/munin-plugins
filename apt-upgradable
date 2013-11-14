@@ -42,9 +42,13 @@ case $1 in
         echo "graph_args --base 1000 --lower-limit 0"
         echo "upgrades.label Upgradable packages"
         echo "upgrades.draw AREA"
+        echo "upgrades.warning 15"
+        echo "upgrades.critical 30"
         echo "upgrades.colour ${UPG_COLOR}"
         echo "essential.label Essential upgrades"
         echo "essential.draw STACK"
+        echo "essential.warning 5"
+        echo "essential.critical 10"
         echo "essential.colour ${ESS_COLOR}"
         if [ "${#ARR_IMPORTANT[@]}" -ne 0 ]; then
             echo "important.label Important upgrades"
