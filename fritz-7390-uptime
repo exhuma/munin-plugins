@@ -1,0 +1,198 @@
+#!/usr/bin/env python
+"""
+Access FritzBox JSON data to retrieve the current DSL "uptime".
+
+Usage
+-----
+
+Link into your munin-plugins folder::
+
+    cd /etc/munin/plugins
+    ln -s /opt/munin-plugins/fritz-7390-uptime
+
+And create a config file ``/etc/munin/plugin-conf.d/fritz-7390-uptime`` with
+the following contents (replacing the IP with that of your fritz of course)::
+
+    [fritz-7390-uptime]
+       env.URL http://192.168.0.1
+
+Known issues
+------------
+
+* Currently only supports interfaces without HTTP AUTH!
+"""
+#%# family=auto
+#%# capabilities=autoconf
+
+from __future__ import print_function
+import json
+from datetime import timedelta
+from collections import namedtuple
+from textwrap import dedent
+from argparse import ArgumentParser
+from os import getenv
+from urllib2 import urlopen, URLError
+import sys
+import re
+
+
+class FritzClient(object):
+    """
+    HTTP client to the fritz box.
+    """
+
+    def __init__(self, config):
+        """
+        Initialises the object
+        """
+        self.config = config
+
+    def has_access(self):
+        """
+        Determines if the access to the FritzBox works. Returns a tuple
+        (boolean, reason)
+        """
+        try:
+            response = urlopen(self.config.url, timeout=2)
+            return True, "Successfully connected"
+        except URLError as exc:
+            return False, exc.reason
+
+    def get_uptime(self):
+        """
+        Returns uptime as a timedelta object.
+        """
+
+        url = ('{}/internet/dsl_overview.lua?'
+               'useajax=1&'
+               'action=get_data&'
+               'xhr=1'.format(
+                   self.config.url))
+        response = urlopen(url, timeout=2)
+        data = response.read()
+        struct = json.loads(data)
+
+        uptime = struct['line']['time']
+        if uptime.isdigit():
+            uptime = timedelta(seconds=int(uptime))
+        else:
+            uptime = uptime[1:-1]  # strip brackets
+            hours, minutes, seconds = uptime.split(':')
+            uptime = timedelta(
+                hours=int(hours),
+                minutes=int(minutes),
+                seconds=int(seconds))
+        return uptime
+
+
+class Config(object):
+
+    def __init__(self, url, username, password):
+        self.url = url
+        self.username = username
+        self.password = password
+
+    def __repr__(self):
+        return u'<Config url={!r}, username={!r}, password={!r}>'.format(
+            self.url,
+            self.username,
+            '****' if self.password else None)
+
+
+class Application(object):
+    """
+    The main application code.
+    """
+
+    def __init__(self, args, config):
+        self.args = args
+        self.config = config
+        self.client = FritzClient(self.config)
+
+    def execute(self):
+        """
+        Executes one command
+        """
+        cmdfunc = 'do_{}'.format(self.args.command)
+        if hasattr(self, cmdfunc):
+            getattr(self, cmdfunc)()
+        else:
+            print(u'Unknown command: {!r}'.format(self.args.command),
+                  file=sys.stderr)
+
+    def do_config(self):
+        """
+        Implementation for command "config"
+        """
+        print(dedent(
+            """\
+            graph_title FritzBox uptime
+            graph_vlabel Uptime (minutes)
+            graph_scale no
+            graph_category Internet
+            graph_args --base 1000 --lower-limit 0
+            graph_info Time in minutes since successfully connected to DSL.
+            uptime.info Uptime in minutes.
+            uptime.label uptime
+            uptime.draw AREA"""))
+
+    def do_autoconf(self):
+        """
+        Implementation for command "autoconf"
+        """
+        may_access, reason = self.client.has_access()
+        if may_access:
+            print("yes")
+        else:
+            print(u"no (unable to access the FritzBox via {!r}): {}".format(
+                self.config, reason))
+
+    def do_fetch(self):
+        """
+        Implementation for command "fetch"
+        """
+        uptime = self.client.get_uptime()
+        print(dedent(
+            u"""\
+            uptime.value {}""".format(int(uptime.total_seconds() / 60))))
+
+
+def parse_args():
+    """
+    Parses CLI arguments and returns an object with the following attributes:
+
+    * ``command`` - The command to the plugin (config,)
+    """
+
+    parser = ArgumentParser(description=dedent(
+        """\
+        screen-scrapes the FritzBox 7390 web-page to retrieve DSL uptime."""))
+
+    parser.add_argument('command', nargs='?', help=u'Plugin command',
+                        default='fetch')
+    return parser.parse_args()
+
+
+def config():
+    """
+    Returns an :py:class:`.Config` instance.
+    """
+
+    return Config(
+        getenv('URL'),
+        getenv('USERNAME'),
+        getenv('PASSWORD'))
+
+
+def main():
+    """
+    Main entry point of the app.
+    """
+    args = parse_args()
+    cfg = config()
+    app = Application(args, cfg)
+    app.execute()
+
+
+if __name__ == '__main__':
+    main()
