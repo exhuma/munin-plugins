@@ -128,7 +128,7 @@ class Application(object):
             graph_title FritzBox errors
             graph_vlabel error count
             graph_scale no
-            graph_category Internet
+            graph_category FritzBox
             graph_args --base 1000 --lower-limit 0
             graph_info Error counters for the fritz box.
             fec_fritz_per_min.info Fritz recoverable errors per minute (FEC)

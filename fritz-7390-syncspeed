@@ -139,7 +139,7 @@ class Application(object):
             graph_title FritzBox Sync Speeds
             graph_vlabel Speed (kbit/s)
             graph_scale no
-            graph_category Internet
+            graph_category FritzBox
             graph_args --base 1000
             graph_info Time in minutes since successfully connected to DSL.
             upstream.info speed in kbit/s
