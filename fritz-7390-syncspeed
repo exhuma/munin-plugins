@@ -143,10 +143,10 @@ class Application(object):
             graph_args --base 1000
             graph_info Time in minutes since successfully connected to DSL.
             upstream.info speed in kbit/s
-            upstream.label speed
+            upstream.label upstream
             upstream.draw LINE
             downstream.info speed in kbit/s
-            downstream.label speed
+            downstream.label downstream
             downstream.draw LINE"""))
 
     def do_autoconf(self):
