@@ -177,8 +177,8 @@ class Application(object):
     The main application code.
     """
 
-    def __init__(self, progname, args, config):
-        self.progname = progname
+    def __init__(self, stat, args, config):
+        self.stat = stat
         self.args = args
         self.config = config
         self.client = FritzClient(self.config)
@@ -187,8 +187,7 @@ class Application(object):
         """
         Executes one command
         """
-        _, stat = self.progname.rsplit('_', 1)
-        cmdfunc = 'do_{}_{}'.format(self.args.command, stat)
+        cmdfunc = 'do_{}_{}'.format(self.args.command, self.stat)
         if hasattr(self, cmdfunc):
             getattr(self, cmdfunc)()
         else:
@@ -314,8 +313,16 @@ def parse_args():
     parser = ArgumentParser(
         description="Interrogates a FritzBox 7390 for various stats.")
 
+    parser.add_argument('-s', '--statname', help=(
+        u'Statistcs to fetch. By default the stats are determined by the '
+        u'plugin filename. This lets you override this behaviour for '
+        u'debugging.'),
+        dest='stat',
+        default=None)
+
     parser.add_argument('command', nargs='?', help=u'Plugin command',
                         default='fetch')
+
     return parser.prog, parser.parse_args()
 
 
@@ -324,11 +331,17 @@ def main():
     Main entry point of the app.
     """
     progname, args = parse_args()
+
+    if args.stat:
+        stat = args.stat
+    else:
+        _, stat = progname.rsplit('_', 1)
+
     cfg = Config(
         getenv('URL'),
         getenv('USERNAME'),
         getenv('PASSWORD'))
-    app = Application(progname, args, cfg)
+    app = Application(stat, args, cfg)
     app.execute()
 
 
