@@ -50,6 +50,7 @@ Speeds = namedtuple('Speeds', 'upstream, downstream')
 Errors = namedtuple(
     'Errors',
     'fec_fritz_per_min, crc_fritz_per_min, fec_dsl_per_min, crc_dsl_per_min')
+Config = namedtuple('Config', 'url, username, password')
 STAT_PATTERN = re.compile(r'^\["(.*?)"\] = "(.*?)",?$')
 
 
@@ -259,23 +260,6 @@ class UptimeStats(FritzStatsCommand):
         print(dedent(
             u"""\
             uptime.value {}""".format(int(uptime.total_seconds() / 60))))
-
-
-class Config(object):
-    """
-    Simple container object for config variables.
-    """
-
-    def __init__(self, url, username, password):
-        self.url = url
-        self.username = username
-        self.password = password
-
-    def __repr__(self):
-        return u'<Config url={!r}, username={!r}, password={!r}>'.format(
-            self.url,
-            self.username,
-            '****' if self.password else None)
 
 
 class Application(object):
