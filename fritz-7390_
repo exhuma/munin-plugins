@@ -41,6 +41,7 @@ from textwrap import dedent
 from argparse import ArgumentParser
 from os import getenv
 from urllib2 import urlopen, URLError
+import socket
 import sys
 import re
 
@@ -84,6 +85,8 @@ class FritzClient(object):
             return True, "Successfully connected"
         except URLError as exc:
             return False, exc.reason
+        except socket.timeout as exc:
+            return False, str(exc)
 
     def get_errors(self):
         """
