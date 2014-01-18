@@ -341,6 +341,12 @@ def main():
         getenv('URL'),
         getenv('USERNAME'),
         getenv('PASSWORD'))
+
+    if not cfg.url:
+        print('No URL specified in the config file! See the docs!',
+              file=sys.stderr)
+        sys.exit(9)
+
     app = Application(stat, args, cfg)
     app.execute()
 
