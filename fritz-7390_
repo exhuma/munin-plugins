@@ -81,7 +81,7 @@ class FritzClient(object):
         (boolean, reason)
         """
         try:
-            response = urlopen(self.config.url, timeout=2)
+            urlopen(self.config.url, timeout=2)
             return True, "Successfully connected"
         except URLError as exc:
             return False, exc.reason
@@ -156,6 +156,9 @@ class FritzClient(object):
 
 
 class Config(object):
+    """
+    Simple container object for config variables.
+    """
 
     def __init__(self, url, username, password):
         self.url = url
@@ -300,6 +303,7 @@ class Application(object):
     do_autoconf_errors = do_autoconf
     do_autoconf_uptime = do_autoconf
 
+
 def parse_args():
     """
     Parses CLI arguments and returns an object with the following attributes:
@@ -315,23 +319,15 @@ def parse_args():
     return parser.prog, parser.parse_args()
 
 
-def config():
-    """
-    Returns an :py:class:`.Config` instance.
-    """
-
-    return Config(
-        getenv('URL'),
-        getenv('USERNAME'),
-        getenv('PASSWORD'))
-
-
 def main():
     """
     Main entry point of the app.
     """
     progname, args = parse_args()
-    cfg = config()
+    cfg = Config(
+        getenv('URL'),
+        getenv('USERNAME'),
+        getenv('PASSWORD'))
     app = Application(progname, args, cfg)
     app.execute()
 
