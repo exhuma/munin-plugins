@@ -66,15 +66,27 @@ def convert_to_kbits(strdata):
 
 class FritzStatsCommand(object):
 
-    def __init__(self, client, config):
-        self._client = client
+    def __init__(self, config):
         self._config = config
+
+    def has_access(self):
+        """
+        Determines if the access to the FritzBox works. Returns a tuple
+        (boolean, reason)
+        """
+        try:
+            urlopen(self._config.url, timeout=2)
+            return True, "Successfully connected"
+        except URLError as exc:
+            return False, exc.reason
+        except socket.timeout as exc:
+            return False, str(exc)
 
     def do_autoconf(self):
         """
         Implementation for command "autoconf"
         """
-        may_access, reason = self._client.has_access()
+        may_access, reason = self.has_access()
         if may_access:
             print("yes")
         else:
@@ -84,18 +96,36 @@ class FritzStatsCommand(object):
 
 class ErrorStats(FritzStatsCommand):
 
+    def get(self):
+        """
+        Returns FEC and CRC errors
+        """
+        response = urlopen('{}/internet/dsl_stats_tab.lua'.format(
+            self._config.url), timeout=2)
+        data = response.read()
+        values = {}
+        for line in data.splitlines():
+            match = STAT_PATTERN.match(line.strip())
+            if match:
+                var, value = match.groups()
+                values[var] = value
+        return Errors(
+            float(values['sar:status/ds_fec_minute']),
+            float(values['sar:status/ds_crc_minute']),
+            float(values['sar:status/us_fec_minute']),
+            float(values['sar:status/us_crc_minute']))
+
     def do_fetch(self):
         """
         Implementation for command "fetch"
         """
-        errors = self._client.get_errors()
+        errors = self.get()
         print(dedent(
             u"""\
             fec_fritz_per_min.value -{0.fec_fritz_per_min!s}
             crc_fritz_per_min.value -{0.crc_fritz_per_min!s}
             fec_dsl_per_min.value {0.fec_dsl_per_min!s}
             crc_dsl_per_min.value {0.crc_dsl_per_min!s}""".format(errors)))
-
 
     def do_config(self):
         """
@@ -125,6 +155,27 @@ class ErrorStats(FritzStatsCommand):
 
 class SyncSpeedStats(FritzStatsCommand):
 
+    def get(self):
+        """
+        Returns syncspeeds as a 2-tuple (upstream, downstream).
+
+        All speeds are reported a kilobits per second.
+        """
+
+        url = ('{}/internet/dsl_overview.lua?'
+               'useajax=1&'
+               'action=get_data&'
+               'xhr=1'.format(
+                   self._config.url))
+        response = urlopen(url, timeout=2)
+        data = response.read()
+        struct = json.loads(data)
+
+        downstream = convert_to_kbits(struct['ds_rate'])
+        upstream = convert_to_kbits(struct['us_rate'])
+
+        return Speeds(upstream, downstream)
+
     def do_config(self):
         """
         Implementation for command "config"
@@ -148,7 +199,7 @@ class SyncSpeedStats(FritzStatsCommand):
         """
         Implementation for command "fetch"
         """
-        speeds = self._client.get_syncspeed()
+        speeds = self.get()
         print(dedent(
             u"""\
             upstream.value {}
@@ -157,6 +208,32 @@ class SyncSpeedStats(FritzStatsCommand):
 
 
 class UptimeStats(FritzStatsCommand):
+
+    def get(self):
+        """
+        Returns uptime as a timedelta object.
+        """
+
+        url = ('{}/internet/dsl_overview.lua?'
+               'useajax=1&'
+               'action=get_data&'
+               'xhr=1'.format(
+                   self._config.url))
+        response = urlopen(url, timeout=2)
+        data = response.read()
+        struct = json.loads(data)
+
+        uptime = struct['line']['time']
+        if uptime.isdigit():
+            uptime = timedelta(seconds=int(uptime))
+        else:
+            uptime = uptime[1:-1]  # strip brackets
+            hours, minutes, seconds = uptime.split(':')
+            uptime = timedelta(
+                hours=int(hours),
+                minutes=int(minutes),
+                seconds=int(seconds))
+        return uptime
 
     def do_config(self):
         """
@@ -178,101 +255,10 @@ class UptimeStats(FritzStatsCommand):
         """
         Implementation for command "fetch"
         """
-        uptime = self._client.get_uptime()
+        uptime = self.get()
         print(dedent(
             u"""\
             uptime.value {}""".format(int(uptime.total_seconds() / 60))))
-
-
-class FritzClient(object):
-    """
-    HTTP client to the fritz box.
-    """
-
-    def __init__(self, config):
-        """
-        Initialises the object
-        """
-        self.config = config
-
-    def has_access(self):
-        """
-        Determines if the access to the FritzBox works. Returns a tuple
-        (boolean, reason)
-        """
-        try:
-            urlopen(self.config.url, timeout=2)
-            return True, "Successfully connected"
-        except URLError as exc:
-            return False, exc.reason
-        except socket.timeout as exc:
-            return False, str(exc)
-
-    def get_errors(self):
-        """
-        Returns FEC and CRC errors
-        """
-        response = urlopen('{}/internet/dsl_stats_tab.lua'.format(
-            self.config.url), timeout=2)
-        data = response.read()
-        values = {}
-        for line in data.splitlines():
-            match = STAT_PATTERN.match(line.strip())
-            if match:
-                var, value = match.groups()
-                values[var] = value
-        return Errors(
-            float(values['sar:status/ds_fec_minute']),
-            float(values['sar:status/ds_crc_minute']),
-            float(values['sar:status/us_fec_minute']),
-            float(values['sar:status/us_crc_minute']))
-
-    def get_syncspeed(self):
-        """
-        Returns syncspeeds as a 2-tuple (upstream, downstream).
-
-        All speeds are reported a kilobits per second.
-        """
-
-        url = ('{}/internet/dsl_overview.lua?'
-               'useajax=1&'
-               'action=get_data&'
-               'xhr=1'.format(
-                   self.config.url))
-        response = urlopen(url, timeout=2)
-        data = response.read()
-        struct = json.loads(data)
-
-        downstream = convert_to_kbits(struct['ds_rate'])
-        upstream = convert_to_kbits(struct['us_rate'])
-
-        return Speeds(upstream, downstream)
-
-    def get_uptime(self):
-        """
-        Returns uptime as a timedelta object.
-        """
-
-        url = ('{}/internet/dsl_overview.lua?'
-               'useajax=1&'
-               'action=get_data&'
-               'xhr=1'.format(
-                   self.config.url))
-        response = urlopen(url, timeout=2)
-        data = response.read()
-        struct = json.loads(data)
-
-        uptime = struct['line']['time']
-        if uptime.isdigit():
-            uptime = timedelta(seconds=int(uptime))
-        else:
-            uptime = uptime[1:-1]  # strip brackets
-            hours, minutes, seconds = uptime.split(':')
-            uptime = timedelta(
-                hours=int(hours),
-                minutes=int(minutes),
-                seconds=int(seconds))
-        return uptime
 
 
 class Config(object):
@@ -301,11 +287,10 @@ class Application(object):
         self.stat = stat
         self.args = args
         self.config = config
-        self.client = FritzClient(self.config)
         self.command_map = {
-            'uptime': UptimeStats(self.client, self.config),
-            'errors': ErrorStats(self.client, self.config),
-            'syncspeed': SyncSpeedStats(self.client, self.config),
+            'uptime': UptimeStats(self.config),
+            'errors': ErrorStats(self.config),
+            'syncspeed': SyncSpeedStats(self.config),
         }
 
     def execute(self):
