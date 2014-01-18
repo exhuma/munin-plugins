@@ -25,6 +25,47 @@ the following contents (replacing the IP with that of your fritz of course)::
     [fritz-7390_*]
        env.URL http://192.168.0.1
 
+
+Adding new stats
+----------------
+
+Simply create a new sub-class of FritzStat. The name of the class defines the
+stat-name. The application will cut off the trailing 4 characters of the
+class-name (usually 'Stat'). So if you want to make a new stat named 'foo'
+available, you should create a class named ``FooStat(FritzStat)``.
+
+The sub-class must implement the methods ``do_config`` and ``do_fetch`` which
+represent the corresponding munin calls. They can optionally define a
+``do_autoconf`` method. The "do_" prefix exists to avoid conflicts.
+
+The class has an instance method ``config`` which contains configuration
+values.
+
+
+Example::
+
+    class FooStat(FritzStat):
+
+        def do_fetch(self):
+            print(dedent(
+                u'''\
+                foo.value 10
+                '''))
+
+        def do_config(self):
+            print(dedent(
+                '''\
+                graph_title FritzBox Example Stat
+                graph_vlabel static foo
+                graph_scale no
+                graph_category FritzBox
+                graph_args --base 1000 --lower-limit 0
+                graph_info Example stat values
+                foo.info Foo value
+                foo.label foo
+                foo.draw AREA
+                ''))
+
 Known issues
 ------------
 
@@ -65,7 +106,7 @@ def convert_to_kbits(strdata):
     return int(strdata[0:-7])
 
 
-class FritzStatsCommand(object):
+class FritzStat(object):
 
     def __init__(self, config):
         self._config = config
@@ -95,7 +136,7 @@ class FritzStatsCommand(object):
                 self._config, reason))
 
 
-class ErrorStats(FritzStatsCommand):
+class ErrorsStat(FritzStat):
 
     def get(self):
         """
@@ -154,7 +195,7 @@ class ErrorStats(FritzStatsCommand):
             crc_dsl_per_min.draw STACK"""))
 
 
-class SyncSpeedStats(FritzStatsCommand):
+class SyncSpeedStat(FritzStat):
 
     def get(self):
         """
@@ -208,7 +249,7 @@ class SyncSpeedStats(FritzStatsCommand):
         )
 
 
-class UptimeStats(FritzStatsCommand):
+class UptimeStat(FritzStat):
 
     def get(self):
         """
@@ -271,11 +312,10 @@ class Application(object):
         self.stat = stat
         self.args = args
         self.config = config
-        self.command_map = {
-            'uptime': UptimeStats(self.config),
-            'errors': ErrorStats(self.config),
-            'syncspeed': SyncSpeedStats(self.config),
-        }
+        self.command_map = {}
+        for cls in FritzStat.__subclasses__():
+            statname = cls.__name__[0:-4].lower()
+            self.command_map[statname] = cls(self.config)
 
     def execute(self):
         """
