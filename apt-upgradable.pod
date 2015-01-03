@@ -40,12 +40,12 @@ values. On Ubuntu systems this is enabled by default!
 
 No configuration is required by default. All parameters are optional.
 
-The plugin assumes that aptitude is available under /usr/bin/aptitude. If it's
-not available in that location, you can override it with the config variable
-'aptitude_path'
+The plugin assumes that aptitude is available under C</usr/bin/aptitude>. If
+it's not available in that location, you can override it with the config
+variable C<aptitude_path>.
 
-You can change the colors if you want using 'essential_color' and
-'upgrades_color'
+You can change the colors if you want using C<essential_color> and
+C<upgrades_color>.
 
 Additionally, it's possible to manually specify a list of packages which are
 considered important for this system. The variables for this are: C<important>
