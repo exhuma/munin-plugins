@@ -7,13 +7,6 @@ apt-upgradable - Yet another munin plugin to monitor pending upgrades using apt
 Linux servers using the apt package manager with aptitude installed (Ubuntu and
 Debian derivatives mostly)
 
-=head1 CACHING
-
-The values are cached in '/var/lib/munin-node/apt_upgradable'. This folder
-needs to exist and needs to be writable by the user as which this plugin runs.
-Likely 'nobody' or 'root'. The plugin will try to create the folder if it's
-missing, but during my tests, I needed a manual step to create it!
-
 =head1 DESCRIPTION
 
 Comparison to the other default munin plugins `apt` and `apt_all`. First, both

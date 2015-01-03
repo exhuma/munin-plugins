@@ -13,7 +13,7 @@ IMP_COLOR=${important_color:-000000}
 IMPORTANT_PKGS=${important:-""}
 ARR_IMPORTANT=($IMPORTANT_PKGS)
 
-CACHE='/var/lib/munin-node/plugin-state/apt_upgradable'
+CACHE="/var/lib/munin-node/plugin-state/$(whoami)/apt_upgradable"
 if [ ! -d ${CACHE} ]; then
     mkdir ${CACHE}
 fi
