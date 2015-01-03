@@ -13,6 +13,11 @@ IMP_COLOR=${important_color:-000000}
 IMPORTANT_PKGS=${important:-""}
 ARR_IMPORTANT=($IMPORTANT_PKGS)
 
+CACHE='/var/lib/munin-node/plugin-state/apt_upgradable'
+if [ ! -d ${CACHE} ]; then
+    mkdir ${CACHE}
+fi
+
 function in_array() {
    local x
    ENTRY=$1
@@ -24,6 +29,22 @@ function in_array() {
       [ "${x}" == "${ENTRY}" ] && return 0
    done
    return 1
+}
+
+###
+# Returns the content of a file in the cache. If not available, return U
+#
+# Params
+#    $1 The filename (relative to the cache dir)
+##
+function cached() {
+    local fname
+    fname=$1
+    if [ -f ${CACHE}/${fname} ]; then
+        echo $(cat ${CACHE}/${fname})
+    else
+        echo U
+    fi
 }
 
 case $1 in
@@ -59,20 +80,54 @@ case $1 in
     exit 0;;
 esac
 
-ESSENTIAL=$(${APTITUDE} search "?and(?and(?not(?automatic), ?upgradable), ?essential)" | wc -l)
-UPGRADES=$(${APTITUDE} search "?and(?and(?not(?automatic), ?upgradable), ?not(?essential))" | wc -l)
+ESSENTIAL=$(cached essential)
+UPGRADES=$(cached upgrades)
+IMPORTANT=$(cached important)
 
 echo "essential.value $ESSENTIAL"
 echo "upgrades.value $UPGRADES"
+echo "important.value $IMPORTANT"
 
-if [ "${#ARR_IMPORTANT[@]}" -ne 0 ]; then
-    NUM_IMPORTANT=0
-    for pkg in $($APTITUDE -F "%p" search ~U); do
-        in_array ${pkg} "${ARR_IMPORTANT[@]}"
-        RET=$?
-        if [ "${RET}" -eq 0 ]; then
-            NUM_IMPORTANT=$(($NUM_IMPORTANT+1))
+# Now run the value updated in background. A lock file is created to avoid
+# running multiple instances. This ensures that the munin plugin returns fast,
+# so munin can continue processing other plugins. This also means that the
+# values are always delayed by one execution of this plugin, and that the first
+# value will be unknown. But this is not a real-time plugin, so that's okay.
+if [ ! -f ${CACHE}/lock ]; then
+    {
+        touch ${CACHE}/lock
+        NEW_ESS=$(${APTITUDE} search "?and(?and(?not(?automatic), ?upgradable), ?essential)" | wc -l)
+        NEW_UPG=$(${APTITUDE} search "?and(?and(?not(?automatic), ?upgradable), ?not(?essential))" | wc -l)
+        NEW_IMP="U"
+        if [ "${#ARR_IMPORTANT[@]}" -ne 0 ]; then
+            NUM_IMPORTANT=0
+            for pkg in $($APTITUDE -F "%p" search ~U); do
+                in_array ${pkg} "${ARR_IMPORTANT[@]}"
+                RET=$?
+                if [ "${RET}" -eq 0 ]; then
+                    NUM_IMPORTANT=$(($NUM_IMPORTANT+1))
+                fi
+            done
+            NEW_IMP=${NUM_IMPORTANT}
         fi
-    done
-    echo "important.value $NUM_IMPORTANT"
+
+        # Try to write all values in one atomic operation before removing the
+        # lock. This way we should either get all or no values and should avoid
+        # interleaving of multiple processes in parallel.
+        # NOTE: In the case of parallel processes, the last one to finish wins.
+        {
+            echo $NEW_ESS > ${CACHE}/essential
+            echo $NEW_UPG > ${CACHE}/upgrades
+            echo $NEW_IMP > ${CACHE}/important
+        } && rm ${CACHE}/lock
+    } &
+else
+    # Either another process is running (highly unlikely, except on EXTREMELY
+    # high load) or something went wrong (more likely). In order to avoid
+    # graphs with incorrect data, we will reset them to "UNKNOWN". This should
+    # trigger the interest of a sysadmin to see what's going on.
+    echo Lock file ${CACHE}/lock exists. Not updating the APT values. 1>&2
+    echo U > ${CACHE}/essential
+    echo U > ${CACHE}/upgrades
+    echo U > ${CACHE}/important
 fi
