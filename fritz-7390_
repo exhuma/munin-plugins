@@ -179,7 +179,7 @@ class ErrorsStat(FritzStat):
             graph_vlabel error count
             graph_scale no
             graph_category FritzBox
-            graph_args --base 1000 --lower-limit 0
+            graph_args --base 1000 --logarithmic
             graph_info Error counters for the fritz box.
             fec_fritz_per_min.info Fritz recoverable errors per minute (FEC)
             fec_fritz_per_min.label fritz_fec
@@ -287,11 +287,74 @@ class UptimeStat(FritzStat):
             graph_vlabel Uptime (minutes)
             graph_scale no
             graph_category FritzBox
-            graph_args --base 1000 --lower-limit 0
+            graph_args --base 1000 --logarithmic
             graph_info Time in minutes since successfully connected to DSL.
             uptime.info Uptime in minutes.
             uptime.label uptime
             uptime.draw AREA"""))
+
+    def do_fetch(self):
+        """
+        Implementation for command "fetch"
+        """
+        uptime = self.get()
+        print(dedent(
+            u"""\
+            uptime.value {}""".format(int(uptime.total_seconds() / 60))))
+
+
+class LineUsageStat(FritzStat):
+
+    def get(self):
+        """
+        Returns uptime as a timedelta object.
+        """
+
+        url = ('{}/internet/inetstat_monitor.lua?'
+               'useajax=1&'
+               'action=get_graphic&'
+               'xhr=1'.format(
+                   self._config.url))
+        response = urlopen(url, timeout=2)
+        data = response.read()
+        struct = json.loads(data)
+
+        uptime = struct['line']['time']
+        if uptime.isdigit():
+            uptime = timedelta(seconds=int(uptime))
+        else:
+            uptime = uptime[1:-1]  # strip brackets
+            hours, minutes, seconds = uptime.split(':')
+            uptime = timedelta(
+                hours=int(hours),
+                minutes=int(minutes),
+                seconds=int(seconds))
+        return uptime
+
+    def do_config(self):
+        """
+        Implementation for command "config"
+        """
+        print(dedent(
+            """\
+            graph_title FritzBox line usage
+            graph_vlabel Speed (kbits/s)
+            graph_scale no
+            graph_category FritzBox
+            graph_args --base 1024
+            graph_info Line utilisation in kbits/s.
+            downstream.info Downstream.
+            downstream.label downstream
+            downstream.draw AREA
+            downstream_limit.info Max available downstream.
+            downstream_limit.label Downstream Limit
+            downstream_limit.draw LINE
+            upstream.info Upstream.
+            upstream.label upstream
+            upstream.draw AREA
+            upstream_limit.info Max available upstream.
+            upstream_limit.label Upstream Limit
+            upstream_limit.draw LINE"""))
 
     def do_fetch(self):
         """
