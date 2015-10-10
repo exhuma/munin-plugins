@@ -1,0 +1,496 @@
+#!/usr/bin/env python
+"""
+Interrogate a FritzBox to get various statistics. The current supported stats
+are:
+
+* CRC and FEC errors
+* Sync Speecs (up- and downstream)
+* DSL uptime (time passed since last resync)
+
+Usage
+-----
+
+This plugin determines which stats to show based on the base filename. So when
+linking, you have to link it with a proper filename. Here are examples for the
+currently supported stats::
+
+    cd /etc/munin/plugins
+    ln -s /opt/munin-plugins/fritz-7390_ fritz-7390_errors
+    ln -s /opt/munin-plugins/fritz-7390_ fritz-7390_uptime
+    ln -s /opt/munin-plugins/fritz-7390_ fritz-7390_syncspeed
+
+And create a config file ``/etc/munin/plugin-conf.d/fritz-7390_`` with
+the following contents (replacing the IP with that of your fritz of course)::
+
+    [fritz-7390_*]
+       env.URL http://192.168.0.1
+
+
+Adding new stats
+----------------
+
+Simply create a new sub-class of FritzStat. The name of the class defines the
+stat-name. The application will cut off the trailing 4 characters of the
+class-name (usually 'Stat'). So if you want to make a new stat named 'foo'
+available, you should create a class named ``FooStat(FritzStat)``.
+
+The sub-class must implement the methods ``do_config`` and ``do_fetch`` which
+represent the corresponding munin calls. They can optionally define a
+``do_autoconf`` method. The "do_" prefix exists to avoid conflicts.
+
+The class has an instance method ``config`` which contains configuration
+values.
+
+
+Example::
+
+    class FooStat(FritzStat):
+
+        def do_fetch(self):
+            print(dedent(
+                u'''\
+                foo.value 10
+                '''))
+
+        def do_config(self):
+            print(dedent(
+                '''\
+                graph_title FritzBox Example Stat
+                graph_vlabel static foo
+                graph_scale no
+                graph_category FritzBox
+                graph_args --base 1000 --lower-limit 0
+                graph_info Example stat values
+                foo.info Foo value
+                foo.label foo
+                foo.draw AREA
+                ''))
+
+Known issues
+------------
+
+* Currently only supports interfaces without HTTP AUTH!
+"""
+#%# family=auto
+#%# capabilities=autoconf
+
+from __future__ import print_function
+from math import floor
+import json
+from datetime import timedelta
+from collections import namedtuple
+from textwrap import dedent
+from argparse import ArgumentParser
+from os import getenv
+from urllib2 import urlopen, URLError
+import socket
+import sys
+import re
+
+
+Speeds = namedtuple('Speeds', 'upstream, downstream')
+Errors = namedtuple(
+    'Errors',
+    'fec_fritz_per_min, crc_fritz_per_min, fec_dsl_per_min, crc_dsl_per_min')
+Config = namedtuple('Config', 'url, username, password')
+STAT_PATTERN = re.compile(r'^\["(.*?)"\] = "(.*?)",?$')
+
+
+def convert_to_kbits(strdata):
+    """
+    Converts data as reported from the Fritz to an int representing kbit/s. If
+    the value is not supported, raises a ``ValueError``.
+    """
+    if not strdata.endswith('kbit/s'):
+        raise ValueError('Unable to convert {!r} to kbit/s'.format(strdata))
+
+    return int(strdata[0:-7])
+
+
+class FritzStat(object):
+
+    def __init__(self, config):
+        self._config = config
+
+    def has_access(self):
+        """
+        Determines if the access to the FritzBox works. Returns a tuple
+        (boolean, reason)
+        """
+        try:
+            urlopen(self._config.url, timeout=2)
+            return True, "Successfully connected"
+        except URLError as exc:
+            return False, exc.reason
+        except socket.timeout as exc:
+            return False, str(exc)
+
+    def do_autoconf(self):
+        """
+        Implementation for command "autoconf"
+        """
+        may_access, reason = self.has_access()
+        if may_access:
+            print("yes")
+        else:
+            print(u"no (unable to access the FritzBox via {!r}): {}".format(
+                self._config, reason))
+
+
+class ErrorsStat(FritzStat):
+
+    def get(self):
+        """
+        Returns FEC and CRC errors
+        """
+        response = urlopen('{}/internet/dsl_stats_tab.lua'.format(
+            self._config.url), timeout=2)
+        data = response.read()
+        values = {}
+        for line in data.splitlines():
+            match = STAT_PATTERN.match(line.strip())
+            if match:
+                var, value = match.groups()
+                values[var] = value
+        return Errors(
+            float(values['sar:status/ds_fec_minute']),
+            float(values['sar:status/ds_crc_minute']),
+            float(values['sar:status/us_fec_minute']),
+            float(values['sar:status/us_crc_minute']))
+
+    def do_fetch(self):
+        """
+        Implementation for command "fetch"
+        """
+        errors = self.get()
+        print(dedent(
+            u"""\
+            fec_fritz_per_min.value -{0.fec_fritz_per_min!s}
+            crc_fritz_per_min.value -{0.crc_fritz_per_min!s}
+            fec_dsl_per_min.value {0.fec_dsl_per_min!s}
+            crc_dsl_per_min.value {0.crc_dsl_per_min!s}""".format(errors)))
+
+    def do_config(self):
+        """
+        Implementation for command "config"
+        """
+        print(dedent(
+            """\
+            graph_title FritzBox errors
+            graph_vlabel error count
+            graph_scale no
+            graph_category FritzBox
+            graph_args --base 1000 --lower-limit 0
+            graph_info Error counters for the fritz box.
+            fec_fritz_per_min.info Fritz recoverable errors per minute (FEC)
+            fec_fritz_per_min.label fritz_fec
+            fec_fritz_per_min.draw AREA
+            crc_fritz_per_min.info Fritz unrecoverable errors per minute (CRC)
+            crc_fritz_per_min.label fritz_crc
+            crc_fritz_per_min.draw STACK
+            fec_dsl_per_min.info DSL recoverable errors per minute (FEC)
+            fec_dsl_per_min.label dsl_fec
+            fec_dsl_per_min.draw AREA
+            crc_dsl_per_min.info DSL unrecoverable errors per minute (CRC)
+            crc_dsl_per_min.label dsl_crc
+            crc_dsl_per_min.draw STACK"""))
+
+
+class SyncSpeedStat(FritzStat):
+
+    def get(self):
+        """
+        Returns syncspeeds as a 2-tuple (upstream, downstream).
+
+        All speeds are reported a kilobits per second.
+        """
+
+        url = ('{}/internet/dsl_overview.lua?'
+               'useajax=1&'
+               'action=get_data&'
+               'xhr=1'.format(
+                   self._config.url))
+        response = urlopen(url, timeout=2)
+        data = response.read()
+        struct = json.loads(data)
+
+        downstream = convert_to_kbits(struct['ds_rate'])
+        upstream = convert_to_kbits(struct['us_rate'])
+
+        return Speeds(upstream, downstream)
+
+    def do_config(self):
+        """
+        Implementation for command "config"
+        """
+        print(dedent(
+            """\
+            graph_title FritzBox Sync Speeds
+            graph_vlabel Speed (kbit/s)
+            graph_scale no
+            graph_category FritzBox
+            graph_args --base 1000
+            graph_info Time in minutes since successfully connected to DSL.
+            upstream.info speed in kbit/s
+            upstream.label upstream
+            upstream.draw AREA
+            downstream.info speed in kbit/s
+            downstream.label downstream
+            downstream.draw AREA"""))
+
+    def do_fetch(self):
+        """
+        Implementation for command "fetch"
+        """
+        speeds = self.get()
+        print(dedent(
+            u"""\
+            upstream.value {}
+            downstream.value -{}""".format(speeds.upstream, speeds.downstream))
+        )
+
+
+class UptimeStat(FritzStat):
+
+    def get(self):
+        """
+        Returns uptime as a timedelta object.
+        """
+
+        url = ('{}/internet/dsl_overview.lua?'
+               'useajax=1&'
+               'action=get_data&'
+               'xhr=1'.format(
+                   self._config.url))
+        response = urlopen(url, timeout=2)
+        data = response.read()
+        struct = json.loads(data)
+
+        uptime = struct['line']['time']
+        if uptime.isdigit():
+            uptime = timedelta(seconds=int(uptime))
+        else:
+            uptime = uptime[1:-1]  # strip brackets
+            hours, minutes, seconds = uptime.split(':')
+            uptime = timedelta(
+                hours=int(hours),
+                minutes=int(minutes),
+                seconds=int(seconds))
+        return uptime
+
+    def do_config(self):
+        """
+        Implementation for command "config"
+        """
+        print(dedent(
+            """\
+            graph_title FritzBox uptime
+            graph_vlabel Uptime (minutes)
+            graph_scale no
+            graph_category FritzBox
+            graph_args --base 1000 --lower-limit 0
+            graph_info Time in minutes since successfully connected to DSL.
+            uptime.info Uptime in minutes.
+            uptime.label uptime
+            uptime.draw AREA"""))
+
+    def do_fetch(self):
+        """
+        Implementation for command "fetch"
+        """
+        uptime = self.get()
+        print(dedent(
+            u"""\
+            uptime.value {}""".format(int(uptime.total_seconds() / 60))))
+
+
+class LineUsageStat(FritzStat):
+
+    def do_config(self):
+        """
+        Implementation for command "config"
+        """
+        print(dedent(
+            """\
+            graph_title FritzBox line usage
+            graph_vlabel Speed (kbits/s)
+            graph_scale no
+            graph_category FritzBox
+            graph_args --base 1024
+            graph_info Line utilisation in kbits/s.
+            downstream.info Downstream.
+            downstream.label downstream
+            downstream.draw AREA
+            downstream_limit.info Max available downstream.
+            downstream_limit.label Downstream Limit
+            downstream_limit.draw LINE
+            upstream.info Upstream.
+            upstream.label upstream
+            upstream.draw AREA
+            upstream_limit.info Max available upstream.
+            upstream_limit.label Upstream Limit
+            upstream_limit.draw LINE"""))
+
+    def do_fetch(self):
+        """
+        Implementation for command "fetch"
+        """
+        url = ('{}/internet/inetstat_monitor.lua?'
+               'useajax=1&'
+               'action=get_graphic&'
+               'xhr=1'.format(
+                   self._config.url))
+        response = urlopen(url, timeout=2)
+        data = response.read()
+        struct = json.loads(data)
+
+
+        def bps_to_int_array(bps):
+            bps = bps.split(",")
+            out = []
+            for val in bps:
+                out.append(int(val) * 8 if val else 0)
+            return out
+
+        def convertNqosValues(obj):
+            obj = obj.copy()
+            for key in obj:
+                if isinstance(obj[key], dict) and 'enabled' in obj[key]:
+                    obj[key]['enabled'] = obj[key]['enabled'] == '1'
+                    obj[key]['bps'] = bps_to_int_array(obj[key]['currentBps'])
+
+            obj['upstream'] = int(obj['upstream'])
+            obj['downstream'] = int(obj['downstream'])
+
+            if obj['shapedrate_in_gui'] == "1":
+                obj['upstream'] = min(obj['upstream'], 1000 * int(obj['shapedrate_us']))
+                obj['downstream'] = min(obj['downstream'], 1000 * int(obj['shapedrate_ds']))
+
+            isDocsis = False
+            if obj['umts'] == "1" or obj['ata'] == "1" or isDocsis:
+                defaultUpstream = 384000
+                defaultDownstream = 3600000
+                if obj['ata'] == "1":
+                    defaultUpstream = 2000000
+                    defaultDownstream = 30000000
+
+                obj['upstream'] = (8 * int(obj['maxUS'])) or defaultUpstream
+                obj['downstream'] = (8 * int(obj['maxDS'])) or defaultDownstream
+                obj['upstream'] = max(10000, floor(11 * obj['upstream'] / 10.0))
+                obj['downstream'] = max(10000, floor(11 * obj['downstream'] / 10.0))
+
+            obj['numSamples'] = int(obj['numSamples']) or 1
+            obj['sampleInterval'] = 1000 * (int(obj['sampleInterval']) or 5)
+            obj['dsBps'] = bps_to_int_array(obj['dsCurrentBps'] or "")
+            obj['mcBps'] = bps_to_int_array(obj['mcCurrentBps'] or "")
+            return obj
+
+        from pprint import pprint
+        pprint(struct)
+        print('------------------------------------')
+        pprint(convertNqosValues(struct))
+        return 0
+
+
+        uptime = struct['line']['time']
+        if uptime.isdigit():
+            uptime = timedelta(seconds=int(uptime))
+        else:
+            uptime = uptime[1:-1]  # strip brackets
+            hours, minutes, seconds = uptime.split(':')
+            uptime = timedelta(
+                hours=int(hours),
+                minutes=int(minutes),
+                seconds=int(seconds))
+        print(dedent(
+            u"""\
+            uptime.value {}""".format(int(uptime.total_seconds() / 60))))
+
+
+
+
+class Application(object):
+    """
+    The main application code.
+    """
+
+    def __init__(self, stat, args, config):
+        self.stat = stat
+        self.args = args
+        self.config = config
+        self.command_map = {}
+        for cls in FritzStat.__subclasses__():
+            statname = cls.__name__[0:-4].lower()
+            self.command_map[statname] = cls(self.config)
+
+    def execute(self):
+        """
+        Executes one command
+        """
+
+        executor = self.command_map.get(self.stat)
+        if not executor:
+            print(u'Unknown stats: {!r}'.format(self.stat),
+                  file=sys.stderr)
+            return 9
+
+        cmdfunc = 'do_{}'.format(self.args.command)
+        if hasattr(executor, cmdfunc):
+            getattr(executor, cmdfunc)()
+        else:
+            print(u'Unknown command: {!r}'.format(self.args.command),
+                  file=sys.stderr)
+            return 9
+        return 0
+
+
+def parse_args():
+    """
+    Parses CLI arguments and returns an object with the following attributes:
+
+    * ``command`` - The command to the plugin (config,)
+    """
+
+    parser = ArgumentParser(
+        description="Interrogates a FritzBox 7390 for various stats.")
+
+    parser.add_argument('-s', '--statname', help=(
+        u'Statistcs to fetch. By default the stats are determined by the '
+        u'plugin filename. This lets you override this behaviour for '
+        u'debugging.'),
+        dest='stat',
+        default=None)
+
+    parser.add_argument('command', nargs='?', help=u'Plugin command',
+                        default='fetch')
+
+    return parser.prog, parser.parse_args()
+
+
+def main():
+    """
+    Main entry point of the app.
+    """
+    progname, args = parse_args()
+
+    if args.stat:
+        stat = args.stat
+    else:
+        _, stat = progname.rsplit('_', 1)
+
+    cfg = Config(
+        getenv('URL'),
+        getenv('USERNAME'),
+        getenv('PASSWORD'))
+
+    if not cfg.url:
+        print('No URL specified in the config file! See the docs!',
+              file=sys.stderr)
+        return 9
+
+    app = Application(stat, args, cfg)
+    return app.execute()
+
+
+if __name__ == '__main__':
+    sys.exit(main())
