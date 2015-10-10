@@ -1,0 +1,9 @@
+URL=http://192.168.1.1 ./fritz-7390new -s errors
+URL=http://192.168.1.1 ./fritz-7390new -s errors config
+URL=http://192.168.1.1 ./fritz-7390new -s errors autoconf
+URL=http://192.168.1.1 ./fritz-7390new -s syncspeed
+URL=http://192.168.1.1 ./fritz-7390new -s syncspeed config
+URL=http://192.168.1.1 ./fritz-7390new -s syncspeed autoconf
+URL=http://192.168.1.1 ./fritz-7390new -s uptime
+URL=http://192.168.1.1 ./fritz-7390new -s uptime autoconf
+URL=http://192.168.1.1 ./fritz-7390new -s uptime config
