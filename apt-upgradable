@@ -88,6 +88,13 @@ echo "essential.value $ESSENTIAL"
 echo "upgrades.value $UPGRADES"
 echo "important.value $IMPORTANT"
 
+pgrep apt
+if [[ "$?" == "0" ]]; then
+    # Another instance of apt is running. This should not break this script. We
+    # will simply return the cached values.
+    exit 0
+fi
+
 # Now run the value updated in background. A lock file is created to avoid
 # running multiple instances. This ensures that the munin plugin returns fast,
 # so munin can continue processing other plugins. This also means that the
