@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+from collections import namedtuple
+from os import getenv
+from psycopg2 import connect  # TODO <- munin autoconfig
+from psycopg2.extras import DictCursor
+import argparse
+import re
+
+
+GRAPH_NAME = 'connections'
+DSN = getenv('PG_DSN', 'user=postgres dbname=template1')
+INVALID_CHARS = re.compile(r'[^a-zA-Z0-9_]')
+ConnectionCounter = namedtuple('ConnectionCounter', 'username amount')
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('action', nargs='?',
+                        help='The munin action to perform',
+                        default='fetch')
+    return parser.parse_args()
+
+
+def get_all_connections(connection):
+    # Fetch the current username of the connection
+    cursor = connection.cursor()
+    cursor.execute('SELECT CURRENT_USER')
+    whoami = cursor.fetchone()[0]
+    cursor.close()
+
+    query = ('SELECT usr.usename, COUNT(act2.usename) '
+             'FROM pg_user usr '
+             'LEFT JOIN pg_stat_activity act2 USING (usename) '
+             'GROUP BY usr.usename')
+    cursor = connection.cursor(cursor_factory=DictCursor)
+    cursor.execute(query)
+    for key, value in cursor:
+        if key == whoami:  # Subtract our own connection
+            value -= 1
+        yield ConnectionCounter(key, value)
+    cursor.close()
+
+
+def fetch(connection):
+    conns = list(get_all_connections(connection))
+    total = sum([conn.amount for conn in conns])
+    print('multigraph %s' % GRAPH_NAME)
+    print('total.value %d' % total)
+
+    # print values for the overview graph
+    for subgraph in conns:
+        print('%s.value %d' % (
+            INVALID_CHARS.sub('_', subgraph.username), subgraph.amount))
+
+    # print values for the each subgraph
+    for subgraph in conns:
+        print('multigraph %s.%s' % (GRAPH_NAME,
+                                    INVALID_CHARS.sub('_', subgraph.username)))
+        print('connections.value %d' % subgraph.amount)
+
+
+def config(connection):
+    conns = list(get_all_connections(connection))
+    print('multigraph %s' % GRAPH_NAME)
+    print('graph_title Global PostgreSQL Connections')
+    print('graph_category postgresql')
+    print('graph_args --base 1000')
+    print('graph_vlabel connections')
+    print('total.label Total')
+    for subgraph in conns:
+        print('{0}.label {0}'.format(INVALID_CHARS.sub('_', subgraph.username)))
+
+    for subgraph in conns:
+        print('multigraph %s.%s' % (GRAPH_NAME,
+                                    INVALID_CHARS.sub('_', subgraph.username)))
+        print('graph_title PostgreSQL Connections for %s' % subgraph.username)
+        print('graph_category postgresql')
+        print('graph_args --base 1000')
+        print('graph_vlabel connections')
+        print('connections.label %s' %
+              INVALID_CHARS.sub('_', subgraph.username))
+
+
+def main(action):
+    connection = connect(DSN)
+    try:
+        if action == 'config':
+            config(connection)
+        else:
+            fetch(connection)
+    finally:
+        connection.close()
+
+if __name__ == '__main__':
+    args = parse_args()
+    main(args.action)
