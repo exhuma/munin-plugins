@@ -6,14 +6,17 @@ from os import getenv
 from psycopg2 import connect  # TODO <- munin autoconfig
 from textwrap import dedent
 import argparse
+import logging
 import re
 
+LOG = logging.getLogger(__name__)
 
-GRAPH_NAME = 'connections'
+
 INVALID_CHARS = re.compile(r'[^a-zA-Z0-9_]')
 ConnectionCounter = namedtuple(
     'ConnectionCounter',
     'username idle idle_tx unknown query_running waiting')
+DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
 
 
 def construct_dsn(dbname, user, password='', host='', port=0):
@@ -41,11 +44,17 @@ def parse_args():
 
 class PostgresPlugin(object):
 
-    def __init__(self, connection):
+    def __init__(self, connection, user, password, host, port):
         self.connection = connection
+        self.user = user
+        self.password = password
+        self.host = host
+        self.port = port
 
 
 class Connections(PostgresPlugin):
+
+    NAME = 'connections'
 
     def all_connections(self):
         # Fetch the current username of the connection
@@ -99,7 +108,7 @@ class Connections(PostgresPlugin):
             'waiting': sum([conn.waiting for conn in conns]),
         }
 
-        print('multigraph %s' % GRAPH_NAME)
+        print('multigraph pgmg_%s' % self.NAME)
         print('idle.value %d' % sums['idle'])
         print('idle_transaction.value %d' % sums['idle_transaction'])
         print('unknown.value %d' % sums['unknown'])
@@ -108,8 +117,8 @@ class Connections(PostgresPlugin):
 
         # print values for the each subgraph
         for subgraph in conns:
-            print('multigraph %s.%s' % (
-                GRAPH_NAME,
+            print('multigraph pgmg_%s.%s' % (
+                self.NAME,
                 INVALID_CHARS.sub('_', subgraph.username)))
             print('idle.value %d' % subgraph.idle)
             print('idle_transaction.value %d' % subgraph.idle_tx)
@@ -141,7 +150,7 @@ class Connections(PostgresPlugin):
 
         conns = self.all_connections()
 
-        print('multigraph %s' % GRAPH_NAME)
+        print('multigraph pgmg_%s' % self.NAME)
         print('graph_title Global PostgreSQL Connections')
         print('graph_info Shows an overview of connections and their type on '
               'the PostgreSQL cluster.')
@@ -149,10 +158,109 @@ class Connections(PostgresPlugin):
         print(common_config_block)
         for subgraph in conns:
             clean_username = INVALID_CHARS.sub('_', subgraph.username)
-            print('multigraph %s.%s' % (GRAPH_NAME, clean_username))
+            print('multigraph pgmg_%s.%s' % (self.NAME, clean_username))
             print('graph_title PostgreSQL Connections for %s' %
                   subgraph.username)
             print(common_config_block)
+
+
+class TableHealth(PostgresPlugin):
+
+    NAME = 'table_health'
+
+    def get_stats(self):
+        # we need to get stats for each DB. We need to create new connections
+        # for each.
+        cursor = self.connection.cursor()
+        cursor.execute('SELECT datname FROM pg_database')
+        dbnames = [row[0] for row in cursor]
+        cursor.close()
+
+        # Fetch stats for each DB
+        stats_query = dedent(
+            '''\
+            SELECT
+                schemaname || '.' || relname AS table_name,
+                EXTRACT(EPOCH FROM (NOW() -
+                        GREATEST(last_vacuum, last_autovacuum)))
+                    AS vacuum_age,
+                EXTRACT(EPOCH FROM (NOW() -
+                        GREATEST(last_analyze, last_autoanalyze)))
+                    AS analyze_age
+            FROM pg_stat_user_tables ;
+            ''')
+
+        stats = {}
+        for dbname in dbnames:
+            try:
+                localcon = connect(
+                    construct_dsn(dbname,
+                                  self.user,
+                                  self.password,
+                                  self.host,
+                                  self.port))
+            except Exception as exc:
+                LOG.error(exc)
+                stats[dbname] = []
+                continue
+
+            cursor = localcon.cursor()
+            cursor.execute(stats_query)
+            dbstats = []
+            for tablename, vacuum_age, analyze_age in cursor:
+                dbstats.append(DbHealth(tablename, vacuum_age, analyze_age))
+            stats[dbname] = dbstats
+            cursor.close()
+            localcon.close()
+        return stats
+
+    def fetch(self):
+        allstats = self.get_stats()
+
+        # collect global stats
+        oldest_vacuum = None
+        oldest_analyze = None
+        for dbname, stats in allstats.items():
+            for tablestats in stats:
+                oldest_vacuum = max(oldest_vacuum, tablestats.vacuum_age)
+                oldest_analyze = max(oldest_analyze, tablestats.analyze_age)
+
+        if all([oldest_analyze, oldest_vacuum]):
+            print('multigraph pgmg_%s' % self.NAME)
+            print('oldest_vacuum.value %f' % oldest_vacuum)
+            print('oldest_analyze.value %f' % oldest_analyze)
+
+        # TODO # print values for the each subgraph
+        # TODO for subgraph in conns:
+        # TODO     print('multigraph pgmg_%s.%s' % (self.NAME,
+        # TODO                                 INVALID_CHARS.sub('_', subgraph.username)))
+        # TODO     print('idle.value %d' % subgraph.idle)
+        # TODO     print('idle_transaction.value %d' % subgraph.idle_tx)
+        # TODO     print('unknown.value %d' % subgraph.unknown)
+        # TODO     print('query_running.value %d' % subgraph.query_running)
+        # TODO     print('waiting.value %d' % subgraph.waiting)
+
+    def config(self):
+        # We want the main and subgraph to use the same config. So we store it
+        # as a variable.
+        common_config_block = dedent(
+            '''\
+            graph_category postgresql_multi
+            graph_args --base 1000
+            graph_vlabel Age (seconds)
+            oldest_vacuum.label Oldest Vacuum Age
+            oldest_analyze.label Oldest Analyze Age
+            ''')
+
+        print('multigraph pgmg_%s' % self.NAME)
+        print('graph_title Global PostgreSQL Table Health')
+        print(common_config_block)
+
+        # TODO for subgraph in conns:
+        # TODO     clean_username = INVALID_CHARS.sub('_', subgraph.username)
+        # TODO     print('multigraph pgmg_%s.%s' % (self.NAME, clean_username))
+        # TODO     print('graph_title PostgreSQL Connections for %s' % subgraph.username)
+        # TODO     print(common_config_block)
 
 
 def main(action):
@@ -170,8 +278,8 @@ def main(action):
         port))
 
     try:
-        for cls in (Connections, ):
-            instance = cls(connection)
+        for cls in (Connections, TableHealth):
+            instance = cls(connection, user, password, host, port)
             if action == 'config':
                 instance.config()
             else:
