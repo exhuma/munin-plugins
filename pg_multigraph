@@ -304,5 +304,6 @@ def main(action):
 
 
 if __name__ == '__main__':
+    logging.basicConfig()
     args = parse_args()
     main(args.action)
