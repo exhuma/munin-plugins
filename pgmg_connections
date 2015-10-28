@@ -275,6 +275,15 @@ def main(action):
     password = getenv('PG_PASSWORD', '')
     host = getenv('PG_HOST', '')
     port = int(getenv('PG_PORT', 0))
+    selected_plugins = getenv('PG_MULTIGRAPHS', '__all__')
+    selected_plugins = {name.strip() for name in selected_plugins.split(',')}
+
+    available_plugins = PostgresPlugin.__subclasses__()
+    if '__all__' in selected_plugins:
+        active_plugins = available_plugins
+    else:
+        active_plugins = [plugin for plugin in available_plugins
+                          if plugin.NAME in selected_plugins]
 
     connection = connect(construct_dsn(
         dbname,
@@ -284,7 +293,7 @@ def main(action):
         port))
 
     try:
-        for cls in (Connections, TableHealth):
+        for cls in active_plugins:
             instance = cls(connection, user, password, host, port)
             if action == 'config':
                 instance.config()
