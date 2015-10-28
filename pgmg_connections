@@ -51,6 +51,12 @@ class PostgresPlugin(object):
         self.host = host
         self.port = port
 
+    def fetch(self):
+        print('multigraph pgmg_%s' % self.NAME)
+
+    def config(self):
+        print('multigraph pgmg_%s' % self.NAME)
+
 
 class Connections(PostgresPlugin):
 
@@ -99,6 +105,7 @@ class Connections(PostgresPlugin):
         return output
 
     def fetch(self):
+        super(Connections, self).fetch()
         conns = self.all_connections()
         sums = {
             'idle': sum([conn.idle for conn in conns]),
@@ -108,7 +115,6 @@ class Connections(PostgresPlugin):
             'waiting': sum([conn.waiting for conn in conns]),
         }
 
-        print('multigraph pgmg_%s' % self.NAME)
         print('idle.value %d' % sums['idle'])
         print('idle_transaction.value %d' % sums['idle_transaction'])
         print('unknown.value %d' % sums['unknown'])
@@ -127,6 +133,7 @@ class Connections(PostgresPlugin):
             print('waiting.value %d' % subgraph.waiting)
 
     def config(self):
+        super(Connections, self).config()
         # We want the main and subgraph to use the same config. So we store it
         # as a variable.
         common_config_block = dedent(
@@ -150,7 +157,6 @@ class Connections(PostgresPlugin):
 
         conns = self.all_connections()
 
-        print('multigraph pgmg_%s' % self.NAME)
         print('graph_title Global PostgreSQL Connections')
         print('graph_info Shows an overview of connections and their type on '
               'the PostgreSQL cluster.')
@@ -215,6 +221,7 @@ class TableHealth(PostgresPlugin):
         return stats
 
     def fetch(self):
+        super(TableHealth, self).fetch()
         allstats = self.get_stats()
 
         # collect global stats
@@ -226,7 +233,6 @@ class TableHealth(PostgresPlugin):
                 oldest_analyze = max(oldest_analyze, tablestats.analyze_age)
 
         if all([oldest_analyze, oldest_vacuum]):
-            print('multigraph pgmg_%s' % self.NAME)
             print('oldest_vacuum.value %f' % oldest_vacuum)
             print('oldest_analyze.value %f' % oldest_analyze)
 
@@ -241,6 +247,7 @@ class TableHealth(PostgresPlugin):
         # TODO     print('waiting.value %d' % subgraph.waiting)
 
     def config(self):
+        super(TableHealth, self).config()
         # We want the main and subgraph to use the same config. So we store it
         # as a variable.
         common_config_block = dedent(
@@ -252,7 +259,6 @@ class TableHealth(PostgresPlugin):
             oldest_analyze.label Oldest Analyze Age
             ''')
 
-        print('multigraph pgmg_%s' % self.NAME)
         print('graph_title Global PostgreSQL Table Health')
         print(common_config_block)
 
