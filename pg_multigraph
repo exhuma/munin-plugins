@@ -52,10 +52,15 @@ class PostgresPlugin(object):
         self.port = port
 
     def fetch(self):
-        print('multigraph pgmg_%s' % self.NAME)
+        print('multigraph %s' % self.graph_name)
 
     def config(self):
-        print('multigraph pgmg_%s' % self.NAME)
+        print('multigraph %s' % self.graph_name)
+        print('graph_category postgresql_multi')
+
+    @property
+    def graph_name(self):
+        return 'pgmg_%s' % self.NAME
 
 
 class Connections(PostgresPlugin):
@@ -123,8 +128,8 @@ class Connections(PostgresPlugin):
 
         # print values for the each subgraph
         for subgraph in conns:
-            print('multigraph pgmg_%s.%s' % (
-                self.NAME,
+            print('multigraph %s.%s' % (
+                self.graph_name,
                 INVALID_CHARS.sub('_', subgraph.username)))
             print('idle.value %d' % subgraph.idle)
             print('idle_transaction.value %d' % subgraph.idle_tx)
@@ -138,7 +143,6 @@ class Connections(PostgresPlugin):
         # as a variable.
         common_config_block = dedent(
             '''\
-            graph_category postgresql_multi
             graph_args --base 1000
             graph_vlabel connections
             graph_order waiting query_running idle idle_transaction unknown
@@ -164,7 +168,7 @@ class Connections(PostgresPlugin):
         print(common_config_block)
         for subgraph in conns:
             clean_username = INVALID_CHARS.sub('_', subgraph.username)
-            print('multigraph pgmg_%s.%s' % (self.NAME, clean_username))
+            print('multigraph %s.%s' % (self.graph_name, clean_username))
             print('graph_title PostgreSQL Connections for %s' %
                   subgraph.username)
             print(common_config_block)
@@ -238,7 +242,7 @@ class TableHealth(PostgresPlugin):
 
         # TODO # print values for the each subgraph
         # TODO for subgraph in conns:
-        # TODO     print('multigraph pgmg_%s.%s' % (self.NAME,
+        # TODO     print('multigraph %s.%s' % (self.graph_name,
         # TODO                                 INVALID_CHARS.sub('_', subgraph.username)))
         # TODO     print('idle.value %d' % subgraph.idle)
         # TODO     print('idle_transaction.value %d' % subgraph.idle_tx)
@@ -252,7 +256,6 @@ class TableHealth(PostgresPlugin):
         # as a variable.
         common_config_block = dedent(
             '''\
-            graph_category postgresql_multi
             graph_args --base 1000
             graph_vlabel Age (seconds)
             oldest_vacuum.label Oldest Vacuum Age
@@ -264,7 +267,7 @@ class TableHealth(PostgresPlugin):
 
         # TODO for subgraph in conns:
         # TODO     clean_username = INVALID_CHARS.sub('_', subgraph.username)
-        # TODO     print('multigraph pgmg_%s.%s' % (self.NAME, clean_username))
+        # TODO     print('multigraph %s.%s' % (self.graph_name, clean_username))
         # TODO     print('graph_title PostgreSQL Connections for %s' % subgraph.username)
         # TODO     print(common_config_block)
 
