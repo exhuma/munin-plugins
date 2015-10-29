@@ -272,6 +272,67 @@ class TableHealth(PostgresPlugin):
         # TODO     print(common_config_block)
 
 
+class Sizes(PostgresPlugin):
+
+    NAME = 'sizes'
+
+    def get_stats(self):
+        cursor = self.connection.cursor()
+        cursor.execute('SELECT datname, pg_database_size(datname) '
+                       'FROM pg_database WHERE datistemplate=false')
+        sizes = cursor.fetchall()
+        cursor.close()
+        return {row[0]: row[1] for row in sizes}
+
+    def fetch(self):
+        super(Sizes, self).fetch()
+        stats = self.get_stats()
+
+        for dbname, value in stats.items():
+            print('%s.value %s' % (INVALID_CHARS.sub('_', dbname), value))
+
+        for dbname, value in stats.items():
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print('size.value %s' % value)
+
+    def config(self):
+        super(Sizes, self).config()
+        stats = self.get_stats()
+        print(dedent(
+            '''\
+            graph_title PostgreSQL Database Sizes
+            graph_args --base 1024
+            graph_vlabel Size in Bytes
+            '''))
+
+        first_graph = True
+        for dbname in sorted(stats):
+            print(dedent(
+                '''\
+                {clean_name}.info Size in Bytes for database {clean_name}
+                {clean_name}.label {raw_name}
+                {clean_name}.draw {style}
+                {clean_name}.min 0
+                '''.format(raw_name=dbname,
+                           clean_name=INVALID_CHARS.sub('_', dbname),
+                           style='AREA' if first_graph else 'STACK')))
+            first_graph = False
+
+        template = dedent(
+            '''\
+            multigraph {graph_name}.{dbname}
+            graph_title Size for {dbname}
+            graph_args --base 1024
+            graph_order size
+            size.min 0
+            size.draw AREA
+            size.label Size (in Bytes)
+            ''')
+        for dbname, value in stats.items():
+            print(template.format(graph_name=self.graph_name,
+                                  dbname=dbname))
+
+
 def main(action):
     dbname = getenv('PG_DBNAME', 'template1')
     user = getenv('PG_USER', 'postgres')
