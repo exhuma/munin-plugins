@@ -318,11 +318,13 @@ class Sizes(PostgresPlugin):
                            style='AREA' if first_graph else 'STACK')))
             first_graph = False
 
+        # Scale each graph relative to the biggest DB
+        upper_limit = max(stats.values())
         template = dedent(
             '''\
             multigraph {graph_name}.{dbname}
             graph_title Size for {dbname}
-            graph_args --base 1024
+            graph_args --base 1024 --upper-limit {upper_limit}
             graph_order size
             size.min 0
             size.draw AREA
@@ -330,7 +332,8 @@ class Sizes(PostgresPlugin):
             ''')
         for dbname, value in stats.items():
             print(template.format(graph_name=self.graph_name,
-                                  dbname=dbname))
+                                  dbname=dbname,
+                                  upper_limit=upper_limit))
 
 
 def main(action):
