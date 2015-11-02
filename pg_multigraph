@@ -1,5 +1,16 @@
 #!/usr/bin/env python
 
+'''
+Munin Postgres Plugins
+
+TODO doc
+
+Changes to Official Perl Plugins:
+
+    * Locks only show both waiting and granted locks. The same lock has the same
+      color hue. Granted locks are muc brighter than waiting locks.
+'''
+
 from __future__ import print_function
 from collections import namedtuple
 from os import getenv
