@@ -16,6 +16,8 @@ INVALID_CHARS = re.compile(r'[^a-zA-Z0-9_]')
 ConnectionCounter = namedtuple(
     'ConnectionCounter',
     'username idle idle_tx unknown query_running waiting')
+Lock = namedtuple('Lock', 'mode, granted')
+GraphedValue = namedtuple('GraphedValue', 'name, label, doc')
 DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
 
 
@@ -334,6 +336,138 @@ class Sizes(PostgresPlugin):
             print(template.format(graph_name=self.graph_name,
                                   dbname=dbname,
                                   upper_limit=upper_limit))
+
+
+class Locks(PostgresPlugin):
+
+    NAME = 'locks'
+    COLORS = [
+        ('ff0000', 'ff8080'),
+        ('ffbf00', 'ffdf80'),
+        ('80ff00', 'bfff80'),
+        ('00ff40', '80ff9f'),
+        ('00ffff', '80ffff'),
+        ('0040ff', '809fff'),
+        ('7f00ff', 'bf80ff'),
+        ('ff00bf', 'ff80df'),
+    ]
+    ACCEPTED_LOCK_NAMES = {
+        GraphedValue('accesssharelock', 'Access share', ''),
+        GraphedValue('rowsharelock', 'Row share', ''),
+        GraphedValue('rowexclusivelock', 'Row excl.', ''),
+        GraphedValue('shareupdateexclusivelock', 'Share upd. excl.', ''),
+        GraphedValue('sharelock', 'Share', ''),
+        GraphedValue('sharerowexclusivelock', 'Share row excl.', ''),
+        GraphedValue('exclusivelock', 'Exclusive', ''),
+        GraphedValue('accessexclusivelock', 'Access excl.', ''),
+    }
+
+    def _graph_config(self):
+        first_graph = True
+        for i, lock_info in enumerate(sorted(self.ACCEPTED_LOCK_NAMES)):
+            waiting_color, granted_color = self.COLORS[i]
+            print(dedent(
+                '''\
+                {lock.name}_granted.label {lock.label} (granted)
+                {lock.name}_granted.draw {style}
+                {lock.name}_granted.min 0
+                {lock.name}_granted.colour {gcolour}
+                {lock.name}_waiting.label {lock.label} (waiting)
+                {lock.name}_waiting.draw STACK
+                {lock.name}_waiting.min 0
+                {lock.name}_waiting.colour {wcolour}
+                '''.format(lock=lock_info,
+                           style='AREA' if first_graph else 'STACK',
+                           gcolour=granted_color,
+                           wcolour=waiting_color)))
+            first_graph = False
+
+    def get_stats(self):
+        query = dedent(
+            '''\
+            SELECT
+                db.datname,
+                LOWER(mode),
+                locktype,
+                granted,
+                COUNT(mode)
+            FROM pg_database db
+            FULL OUTER JOIN pg_locks lck ON (db.oid=lck.database)
+            GROUP BY db.datname, mode, locktype, granted;
+            ''')
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        locks = cursor.fetchall()
+        cursor.close()
+        output = {}
+        for dbname, lockmode, locktype, granted, count in locks:
+            if dbname is None:
+                # locks without related DB, are "global" locks
+                dbname = '__pg__database__'
+
+            dblocks = output.setdefault(dbname, {})
+            dblocks[Lock(lockmode, granted)] = count
+
+        # The above query only returns rows for databases with actual
+        # waiting/granted locks. We always want all DBs to be monitored though.
+        # DBs which don't have locks should report the value `0`. This prevents
+        # NaN values ("holes") in munin.
+        cursor = self.connection.cursor()
+        cursor.execute('SELECT datname FROM pg_database '
+                       'WHERE datistemplate=false')
+        for row in cursor.fetchall():
+            output.setdefault(row[0], {})
+        cursor.close()
+        return output
+
+    def fetch(self):
+        super(Locks, self).fetch()
+        stats = self.get_stats()
+
+        sums = {}
+        for row in stats.values():
+            for lock_info in self.ACCEPTED_LOCK_NAMES:
+                granted_lock = Lock(lock_info.name, True)
+                waiting_lock = Lock(lock_info.name, False)
+                granted_value = sums.setdefault(granted_lock, 0)
+                granted_value += row.get(granted_lock, 0)
+                waiting_value = sums.setdefault(waiting_lock, 0)
+                waiting_value += row.get(waiting_lock, 0)
+                sums[granted_lock] = granted_value
+                sums[waiting_lock] = waiting_value
+
+        for lock, value in sums.items():
+            print('%s_%s.value %s' % (lock.mode,
+                                      'granted' if lock.granted else 'waiting',
+                                      value))
+
+        for dbname, values in sorted(stats.items()):
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            for lock_info in self.ACCEPTED_LOCK_NAMES:
+                granted_lock = Lock(lock_info.name, True)
+                waiting_lock = Lock(lock_info.name, False)
+                print('%s_granted.value %d' % (lock_info.name,
+                                               values.get(granted_lock, 0)))
+                print('%s_waiting.value %d' % (lock_info.name,
+                                               values.get(waiting_lock, 0)))
+
+    def config(self):
+        super(Locks, self).config()
+        stats = self.get_stats()
+        print(dedent(
+            '''\
+            graph_title PostgreSQL Locks
+            graph_args --base 1000
+            graph_vlabel Number of locks
+            graph_printf %3.0lf
+            '''))
+
+        self._graph_config()
+
+        for dbname, value in stats.items():
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print('graph_title Locks for %s' % dbname)
+            self._graph_config()
 
 
 def main(action):
