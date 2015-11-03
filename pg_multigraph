@@ -15,6 +15,7 @@ from __future__ import print_function
 from collections import namedtuple
 from os import getenv
 from psycopg2 import connect  # TODO <- munin autoconfig
+from psycopg2.extras import DictCursor
 from textwrap import dedent
 import argparse
 import logging
@@ -483,6 +484,101 @@ class Locks(PostgresPlugin):
         for dbname, value in stats.items():
             print('multigraph %s.%s' % (self.graph_name, dbname))
             print('graph_title Locks for %s' % dbname)
+            self._graph_config()
+
+
+class TableDiskIO(PostgresPlugin):
+
+    NAME = 'tableio'
+    FIELDS = [
+        ('heap_blks_read', 'Number of disk blocks read'),
+        ('heap_blks_hit', 'Number of buffer hits'),
+        ('idx_blks_read', 'Number of disk blocks read from all indexes'),
+        ('idx_blks_hit', 'Number of buffer hits in all indexes'),
+        ('toast_blks_read', 'Number of disk blocks read from TOAST tables (if any)'),
+        ('toast_blks_hit', 'Number of buffer hits in TOAST tables (if any)'),
+        ('tidx_blks_read', 'Number of disk blocks read from TOAST table indexes (if any)'),
+        ('tidx_blks_hit', 'Number of buffer hits in TOAST table indexes (if any)'),
+    ]
+
+    def _print_values(self, values):
+        for field, _ in self.FIELDS:
+            print('%s.value %s' % (field, values.get(field, 0) or 0))
+
+    def _graph_config(self):
+        for name, info in self.FIELDS:
+            print('%s.label %s' % (name, name))
+            print('%s.info %s' % (name, info))
+
+    def get_stats(self):
+        # we need to get stats for each DB. We need to create new connections
+        # for each.
+        dbnames = self.all_databases
+
+        # Fetch stats for each DB
+        stats_query = dedent(
+            '''\
+            SELECT
+                SUM(heap_blks_read) AS heap_blks_read,
+                SUM(heap_blks_hit) AS heap_blks_hit,
+                SUM(idx_blks_read) AS idx_blks_read,
+                SUM(idx_blks_hit) AS idx_blks_hit,
+                SUM(toast_blks_read) AS toast_blks_read,
+                SUM(toast_blks_hit) AS toast_blks_hit,
+                SUM(tidx_blks_read) AS tidx_blks_read
+            FROM pg_statio_user_tables;
+            ''')
+
+        stats = {}
+        for dbname in dbnames:
+            try:
+                localcon = connect(
+                    construct_dsn(dbname,
+                                  self.user,
+                                  self.password,
+                                  self.host,
+                                  self.port))
+            except Exception as exc:
+                LOG.error(exc)
+                continue
+
+            cursor = localcon.cursor(cursor_factory=DictCursor)
+            cursor.execute(stats_query)
+            stats[dbname] = cursor.fetchone() or {}
+            cursor.close()
+            localcon.close()
+        return stats
+
+    def fetch(self):
+        super(TableDiskIO, self).fetch()
+        stats = self.get_stats()
+
+        sums = {}
+        for count in stats.values():
+            for field, _ in self.FIELDS:
+                current_value = sums.setdefault(field, 0) or 0
+                actual = count.get(field, 0) or 0
+                sums[field] = current_value + actual
+        self._print_values(sums)
+
+        for dbname in self.all_databases:
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            self._print_values(stats.get(dbname, {}))
+
+    def config(self):
+        super(TableDiskIO, self).config()
+        print(dedent(
+            '''\
+            graph_title PostgreSQL Disk IOs
+            graph_args --base 1000
+            graph_vlabel Number of buffers
+            graph_printf %3.0lf
+            '''))
+        self._graph_config()
+
+        for dbname in self.all_databases:
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print('graph_title Diso IOs for %s' % dbname)
             self._graph_config()
 
 
