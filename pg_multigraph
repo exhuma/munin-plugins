@@ -63,6 +63,7 @@ class PostgresPlugin(object):
         self.password = password
         self.host = host
         self.port = port
+        self._dbnames = []
 
     def fetch(self):
         print('multigraph %s' % self.graph_name)
@@ -74,6 +75,17 @@ class PostgresPlugin(object):
     @property
     def graph_name(self):
         return 'pgmg_%s' % self.NAME
+
+    @property
+    def all_databases(self):
+        if self._dbnames:
+            return self._dbnames
+        cursor = self.connection.cursor()
+        cursor.execute('SELECT datname FROM pg_database '
+                       'WHERE datistemplate=false')
+        dbnames = [row[0] for row in cursor]
+        cursor.close()
+        return dbnames
 
 
 class Connections(PostgresPlugin):
@@ -194,10 +206,7 @@ class TableHealth(PostgresPlugin):
     def get_stats(self):
         # we need to get stats for each DB. We need to create new connections
         # for each.
-        cursor = self.connection.cursor()
-        cursor.execute('SELECT datname FROM pg_database')
-        dbnames = [row[0] for row in cursor]
-        cursor.close()
+        dbnames = self.all_databases
 
         # Fetch stats for each DB
         stats_query = dedent(
@@ -423,12 +432,8 @@ class Locks(PostgresPlugin):
         # waiting/granted locks. We always want all DBs to be monitored though.
         # DBs which don't have locks should report the value `0`. This prevents
         # NaN values ("holes") in munin.
-        cursor = self.connection.cursor()
-        cursor.execute('SELECT datname FROM pg_database '
-                       'WHERE datistemplate=false')
-        for row in cursor.fetchall():
-            output.setdefault(row[0], {})
-        cursor.close()
+        for row in self.all_databases:
+            output.setdefault(row, {})
         return output
 
     def fetch(self):
