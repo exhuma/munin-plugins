@@ -395,6 +395,9 @@ class Locks(PostgresPlugin):
 class TableDiskIO(PostgresPlugin):
 
     NAME = 'tableio'
+
+    # Fields are processed as read/hit pairs. They need to follow this sequence
+    # in this list!
     FIELDS = [
         ('heap_blks_read', 'Number of disk blocks read'),
         ('heap_blks_hit', 'Number of buffer hits'),
@@ -411,9 +414,28 @@ class TableDiskIO(PostgresPlugin):
             print('%s.value %s' % (field, values.get(field, 0) or 0))
 
     def _graph_config(self):
-        for name, info in self.FIELDS:
-            print('%s.label %s' % (name, name))
-            print('%s.info %s' % (name, info))
+        # given the linear list, we need to combine them as pairs so we can
+        # process the related items as one.
+        field_pairs = zip(self.FIELDS[::2], self.FIELDS[1::2])
+
+        first_graph = True
+        for read, hit in field_pairs:
+            read_name, read_info = read
+            hit_name, hit_info = hit
+
+            print('%s.label %s' % (read_name, read_name))
+            print('%s.info %s' % (read_name, read_info))
+            print('%s.min 0' % read_name)
+            print('%s.type DERIVE' % read_name)
+            print('%s.draw no' % read_name)
+            print('%s.label %s' % (hit_name, hit_name))
+            print('%s.info %s' % (hit_name, hit_info))
+            print('%s.min 0' % hit_name)
+            print('%s.type DERIVE' % hit_name)
+            print('%s.negative %s' % (hit_name, read_name))
+            print('%s.draw %s' % (hit_name, 'AREA' if first_graph else 'STACK'))
+            first_graph = False
+
 
     def get_stats(self):
         # we need to get stats for each DB. We need to create new connections
