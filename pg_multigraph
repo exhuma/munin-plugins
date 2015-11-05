@@ -438,18 +438,21 @@ class TableDiskIO(PostgresPlugin):
         for read, hit in field_pairs:
             read_name, read_label, read_info = read
             hit_name, hit_label, hit_info = hit
+            stack_type = 'AREA' if first_graph else 'STACK'
 
             print('%s.label %s' % (read_name, read_label))
             print('%s.info %s' % (read_name, read_info))
             print('%s.min 0' % read_name)
             print('%s.type DERIVE' % read_name)
-            print('%s.draw no' % read_name)
+            print('%s.graph no' % read_name)
+            print('%s.draw %s' % (read_name, stack_type))
+
             print('%s.label %s' % (hit_name, hit_label))
             print('%s.info %s' % (hit_name, hit_info))
             print('%s.min 0' % hit_name)
             print('%s.type DERIVE' % hit_name)
             print('%s.negative %s' % (hit_name, read_name))
-            print('%s.draw %s' % (hit_name, 'AREA' if first_graph else 'STACK'))
+            print('%s.draw %s' % (hit_name, stack_type))
             first_graph = False
 
     def get_stats(self):
@@ -513,7 +516,8 @@ class TableDiskIO(PostgresPlugin):
             '''\
             graph_title PostgreSQL Disk IOs (User Tables)
             graph_args --base 1000
-            graph_vlabel Number of buffers
+            graph_vlabel Number of blocks
+            graph_vlabel blocks unbuffered (-) / buffered (+)
             graph_printf %3.0lf
             '''))
         self._graph_config()
