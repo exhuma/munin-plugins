@@ -400,29 +400,31 @@ class TableDiskIO(PostgresPlugin):
     # in this list!
     FIELDS = [
         ('heap_blks_read',
-         'Heap blocks disk-read',
-         'Number of disk blocks read'),
+         'Heap blocks',
+         ''),
         ('heap_blks_hit',
-         'Heap block buffer-hit',
-         'Number of buffer hits'),
+         'Heap blocks',
+         'Number of disk blocks read (-) / buffered (+)'),
         ('idx_blks_read',
-         'Index blocks disk-read',
-         'Number of disk blocks read from all indexes'),
+         'Index blocks',
+         ''),
         ('idx_blks_hit',
-         'Index blocks buffer-hit',
-         'Number of buffer hits in all indexes'),
+         'Index blocks',
+         'Number of disk blocks read (-) / buffered (+) from all indexes'),
         ('toast_blks_read',
-         'TOAST blocks disk-read',
-         'Number of disk blocks read from TOAST tables (if any)'),
+         'TOAST blocks',
+         ''),
         ('toast_blks_hit',
-         'TOAST blocks buffer-hit',
-         'Number of buffer hits in TOAST tables (if any)'),
+         'TOAST blocks',
+         'Number of disk blocks read (-) / buffered (+) from TOAST tables '
+         '(if any)'),
         ('tidx_blks_read',
-         'TOAST index disk-read',
-         'Number of disk blocks read from TOAST table indexes (if any)'),
+         'TOAST index blocks',
+         ''),
         ('tidx_blks_hit',
-         'TOAST index buffer-hit',
-         'Number of buffer hits in TOAST table indexes (if any)'),
+         'TOAST index blocks',
+         'Number of disk blocks read (-) / buffered (+) from TOAST table '
+         'indexes (if any)'),
     ]
 
     def _print_values(self, values):
@@ -516,7 +518,6 @@ class TableDiskIO(PostgresPlugin):
             '''\
             graph_title PostgreSQL Disk IOs (User Tables)
             graph_args --base 1000
-            graph_vlabel Number of blocks
             graph_vlabel blocks unbuffered (-) / buffered (+)
             graph_printf %3.0lf
             '''))
