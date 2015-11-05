@@ -399,18 +399,34 @@ class TableDiskIO(PostgresPlugin):
     # Fields are processed as read/hit pairs. They need to follow this sequence
     # in this list!
     FIELDS = [
-        ('heap_blks_read', 'Number of disk blocks read'),
-        ('heap_blks_hit', 'Number of buffer hits'),
-        ('idx_blks_read', 'Number of disk blocks read from all indexes'),
-        ('idx_blks_hit', 'Number of buffer hits in all indexes'),
-        ('toast_blks_read', 'Number of disk blocks read from TOAST tables (if any)'),
-        ('toast_blks_hit', 'Number of buffer hits in TOAST tables (if any)'),
-        ('tidx_blks_read', 'Number of disk blocks read from TOAST table indexes (if any)'),
-        ('tidx_blks_hit', 'Number of buffer hits in TOAST table indexes (if any)'),
+        ('heap_blks_read',
+         'Heap blocks disk-read',
+         'Number of disk blocks read'),
+        ('heap_blks_hit',
+         'Heap block buffer-hit',
+         'Number of buffer hits'),
+        ('idx_blks_read',
+         'Index blocks disk-read',
+         'Number of disk blocks read from all indexes'),
+        ('idx_blks_hit',
+         'Index blocks buffer-hit',
+         'Number of buffer hits in all indexes'),
+        ('toast_blks_read',
+         'TOAST blocks disk-read',
+         'Number of disk blocks read from TOAST tables (if any)'),
+        ('toast_blks_hit',
+         'TOAST blocks buffer-hit',
+         'Number of buffer hits in TOAST tables (if any)'),
+        ('tidx_blks_read',
+         'TOAST index disk-read',
+         'Number of disk blocks read from TOAST table indexes (if any)'),
+        ('tidx_blks_hit',
+         'TOAST index buffer-hit',
+         'Number of buffer hits in TOAST table indexes (if any)'),
     ]
 
     def _print_values(self, values):
-        for field, _ in self.FIELDS:
+        for field, _, _ in self.FIELDS:
             print('%s.value %s' % (field, values.get(field, 0) or 0))
 
     def _graph_config(self):
@@ -420,22 +436,21 @@ class TableDiskIO(PostgresPlugin):
 
         first_graph = True
         for read, hit in field_pairs:
-            read_name, read_info = read
-            hit_name, hit_info = hit
+            read_name, read_label, read_info = read
+            hit_name, hit_label, hit_info = hit
 
-            print('%s.label %s' % (read_name, read_name))
+            print('%s.label %s' % (read_name, read_label))
             print('%s.info %s' % (read_name, read_info))
             print('%s.min 0' % read_name)
             print('%s.type DERIVE' % read_name)
             print('%s.draw no' % read_name)
-            print('%s.label %s' % (hit_name, hit_name))
+            print('%s.label %s' % (hit_name, hit_label))
             print('%s.info %s' % (hit_name, hit_info))
             print('%s.min 0' % hit_name)
             print('%s.type DERIVE' % hit_name)
             print('%s.negative %s' % (hit_name, read_name))
             print('%s.draw %s' % (hit_name, 'AREA' if first_graph else 'STACK'))
             first_graph = False
-
 
     def get_stats(self):
         # we need to get stats for each DB. We need to create new connections
@@ -482,10 +497,10 @@ class TableDiskIO(PostgresPlugin):
 
         sums = {}
         for count in stats.values():
-            for field, _ in self.FIELDS:
-                current_value = sums.setdefault(field, 0) or 0
-                actual = count.get(field, 0) or 0
-                sums[field] = current_value + actual
+            for field_name, _, _ in self.FIELDS:
+                current_value = sums.setdefault(field_name, 0) or 0
+                actual = count.get(field_name, 0) or 0
+                sums[field_name] = current_value + actual
         self._print_values(sums)
 
         for dbname in self.all_databases:
@@ -496,7 +511,7 @@ class TableDiskIO(PostgresPlugin):
         super(TableDiskIO, self).config()
         print(dedent(
             '''\
-            graph_title PostgreSQL Disk IOs
+            graph_title PostgreSQL Disk IOs (User Tables)
             graph_args --base 1000
             graph_vlabel Number of buffers
             graph_printf %3.0lf
