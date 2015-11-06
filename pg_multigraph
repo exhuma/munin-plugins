@@ -422,7 +422,7 @@ class IOPlugin(PostgresPlugin):
             stack_type = 'AREA' if first_graph else 'STACK'
 
             print('%s.label %s' % (read_name, read_label))
-            print('%s.info %s' % (read_name, read_info))
+            print('%s.info %s' % (read_name, hit_info))
             print('%s.min 0' % read_name)
             print('%s.type DERIVE' % read_name)
             print('%s.graph no' % read_name)
