@@ -33,6 +33,14 @@ GraphedValue = namedtuple('GraphedValue', 'name, label, doc')
 DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
 
 
+def find_subclasses(cls):
+    output = set()
+    for subcls in cls.__subclasses__():
+        output.add(subcls)
+        output = output | find_subclasses(subcls)
+    return output
+
+
 def construct_dsn(dbname, user, password='', host='', port=0):
     elements = [
         'dbname=%s' % dbname,
@@ -392,9 +400,75 @@ class Locks(PostgresPlugin):
             self._graph_config()
 
 
-class TableDiskIO(PostgresPlugin):
+class IOPlugin(PostgresPlugin):
+
+    def _print_values(self, values):
+        for field, _, _ in self.FIELDS:
+            print('%s.value %s' % (field, values.get(field, 0) or 0))
+
+    def _graph_config(self):
+        # given the linear list, we need to combine them as pairs so we can
+        # process the related items as one.
+        field_pairs = zip(self.FIELDS[::2], self.FIELDS[1::2])
+
+        first_graph = True
+        for read, hit in field_pairs:
+            read_name, read_label, read_info = read
+            hit_name, hit_label, hit_info = hit
+            stack_type = 'AREA' if first_graph else 'STACK'
+
+            print('%s.label %s' % (read_name, read_label))
+            print('%s.info %s' % (read_name, read_info))
+            print('%s.min 0' % read_name)
+            print('%s.type DERIVE' % read_name)
+            print('%s.graph no' % read_name)
+            print('%s.draw %s' % (read_name, stack_type))
+
+            print('%s.label %s' % (hit_name, hit_label))
+            print('%s.info %s' % (hit_name, hit_info))
+            print('%s.min 0' % hit_name)
+            print('%s.type DERIVE' % hit_name)
+            print('%s.negative %s' % (hit_name, read_name))
+            print('%s.draw %s' % (hit_name, stack_type))
+            first_graph = False
+
+    def fetch(self):
+        super(IOPlugin, self).fetch()
+        stats = self.get_stats()
+
+        sums = {}
+        for count in stats.values():
+            for field_name, _, _ in self.FIELDS:
+                current_value = sums.setdefault(field_name, 0) or 0
+                actual = count.get(field_name, 0) or 0
+                sums[field_name] = current_value + actual
+        self._print_values(sums)
+
+        for dbname in self.all_databases:
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            self._print_values(stats.get(dbname, {}))
+
+    def config(self):
+        super(IOPlugin, self).config()
+        print(dedent(
+            '''\
+            graph_title {}
+            graph_args --base 1000
+            graph_vlabel blocks unbuffered (-) / buffered (+)
+            graph_printf %3.0lf
+            '''.format(self.TITLE)))
+        self._graph_config()
+
+        for dbname in self.all_databases:
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print('graph_title Diso IOs for %s' % dbname)
+            self._graph_config()
+
+
+class TableDiskIO(IOPlugin):
 
     NAME = 'tableio'
+    TITLE = 'PostgreSQL Disk IOs (User Tables)'
 
     # Fields are processed as read/hit pairs. They need to follow this sequence
     # in this list!
@@ -426,36 +500,6 @@ class TableDiskIO(PostgresPlugin):
          'Number of disk blocks read (-) / buffered (+) from TOAST table '
          'indexes (if any)'),
     ]
-
-    def _print_values(self, values):
-        for field, _, _ in self.FIELDS:
-            print('%s.value %s' % (field, values.get(field, 0) or 0))
-
-    def _graph_config(self):
-        # given the linear list, we need to combine them as pairs so we can
-        # process the related items as one.
-        field_pairs = zip(self.FIELDS[::2], self.FIELDS[1::2])
-
-        first_graph = True
-        for read, hit in field_pairs:
-            read_name, read_label, read_info = read
-            hit_name, hit_label, hit_info = hit
-            stack_type = 'AREA' if first_graph else 'STACK'
-
-            print('%s.label %s' % (read_name, read_label))
-            print('%s.info %s' % (read_name, read_info))
-            print('%s.min 0' % read_name)
-            print('%s.type DERIVE' % read_name)
-            print('%s.graph no' % read_name)
-            print('%s.draw %s' % (read_name, stack_type))
-
-            print('%s.label %s' % (hit_name, hit_label))
-            print('%s.info %s' % (hit_name, hit_info))
-            print('%s.min 0' % hit_name)
-            print('%s.type DERIVE' % hit_name)
-            print('%s.negative %s' % (hit_name, read_name))
-            print('%s.draw %s' % (hit_name, stack_type))
-            first_graph = False
 
     def get_stats(self):
         # we need to get stats for each DB. We need to create new connections
@@ -496,37 +540,107 @@ class TableDiskIO(PostgresPlugin):
             localcon.close()
         return stats
 
-    def fetch(self):
-        super(TableDiskIO, self).fetch()
-        stats = self.get_stats()
 
-        sums = {}
-        for count in stats.values():
-            for field_name, _, _ in self.FIELDS:
-                current_value = sums.setdefault(field_name, 0) or 0
-                actual = count.get(field_name, 0) or 0
-                sums[field_name] = current_value + actual
-        self._print_values(sums)
+class IndexDiskIO(IOPlugin):
 
-        for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            self._print_values(stats.get(dbname, {}))
+    NAME = 'indexio'
+    TITLE = 'PostgreSQL Disk IOs (Indices)'
 
-    def config(self):
-        super(TableDiskIO, self).config()
-        print(dedent(
+    # Fields are processed as read/hit pairs. They need to follow this sequence
+    # in this list!
+    FIELDS = [
+        ('idx_blks_read',
+         'Index blocks',
+         ''),
+        ('idx_blks_hit',
+         'Index blocks',
+         'Number of index blocks read (-) / buffered (+)'),
+    ]
+
+    def get_stats(self):
+        # we need to get stats for each DB. We need to create new connections
+        # for each.
+        dbnames = self.all_databases
+
+        # Fetch stats for each DB
+        stats_query = dedent(
             '''\
-            graph_title PostgreSQL Disk IOs (User Tables)
-            graph_args --base 1000
-            graph_vlabel blocks unbuffered (-) / buffered (+)
-            graph_printf %3.0lf
-            '''))
-        self._graph_config()
+            SELECT
+                SUM(idx_blks_read) AS idx_blks_read,
+                SUM(idx_blks_hit) AS idx_blks_hit
+            FROM pg_statio_user_indexes;
+            ''')
 
-        for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('graph_title Diso IOs for %s' % dbname)
-            self._graph_config()
+        stats = {}
+        for dbname in dbnames:
+            try:
+                localcon = connect(
+                    construct_dsn(dbname,
+                                  self.user,
+                                  self.password,
+                                  self.host,
+                                  self.port))
+            except Exception as exc:
+                LOG.error(exc)
+                continue
+
+            cursor = localcon.cursor(cursor_factory=DictCursor)
+            cursor.execute(stats_query)
+            stats[dbname] = cursor.fetchone() or {}
+            cursor.close()
+            localcon.close()
+        return stats
+
+
+class SequencesDiskIO(IOPlugin):
+
+    NAME = 'sequenceio'
+    TITLE = 'PostgreSQL Disk IOs (Sequences)'
+
+    # Fields are processed as read/hit pairs. They need to follow this sequence
+    # in this list!
+    FIELDS = [
+        ('blks_read',
+         'Sequence blocks',
+         ''),
+        ('blks_hit',
+         'Sequence blocks',
+         'Number of block IOs for sequences\\nread (-) / buffered (+)'),
+    ]
+
+    def get_stats(self):
+        # we need to get stats for each DB. We need to create new connections
+        # for each.
+        dbnames = self.all_databases
+
+        # Fetch stats for each DB
+        stats_query = dedent(
+            '''\
+            SELECT
+                SUM(idx_blks_read) AS idx_blks_read,
+                SUM(idx_blks_hit) AS idx_blks_hit
+            FROM pg_statio_user_indexes;
+            ''')
+
+        stats = {}
+        for dbname in dbnames:
+            try:
+                localcon = connect(
+                    construct_dsn(dbname,
+                                  self.user,
+                                  self.password,
+                                  self.host,
+                                  self.port))
+            except Exception as exc:
+                LOG.error(exc)
+                continue
+
+            cursor = localcon.cursor(cursor_factory=DictCursor)
+            cursor.execute(stats_query)
+            stats[dbname] = cursor.fetchone() or {}
+            cursor.close()
+            localcon.close()
+        return stats
 
 
 def main(action):
@@ -538,12 +652,12 @@ def main(action):
     selected_plugins = getenv('PG_MULTIGRAPHS', '__all__')
     selected_plugins = {name.strip() for name in selected_plugins.split(',')}
 
-    available_plugins = PostgresPlugin.__subclasses__()
+    available_plugins = find_subclasses(PostgresPlugin)
     if '__all__' in selected_plugins:
         active_plugins = available_plugins
     else:
         active_plugins = [plugin for plugin in available_plugins
-                          if plugin.NAME in selected_plugins]
+                          if getattr(plugin, 'NAME', '') in selected_plugins]
 
     connection = connect(construct_dsn(
         dbname,
