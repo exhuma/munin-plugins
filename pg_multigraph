@@ -280,16 +280,6 @@ class Locks(PostgresPlugin):
     NAME = 'locks'
     TITLE = 'Locks'
 
-    COLORS = [
-        ('ff0000', 'ff8080'),
-        ('ffbf00', 'ffdf80'),
-        ('80ff00', 'bfff80'),
-        ('00ff40', '80ff9f'),
-        ('00ffff', '80ffff'),
-        ('0040ff', '809fff'),
-        ('7f00ff', 'bf80ff'),
-        ('ff00bf', 'ff80df'),
-    ]
     ACCEPTED_LOCK_NAMES = {
         GraphedValue('accesssharelock', 'Access share', ''),
         GraphedValue('rowsharelock', 'Row share', ''),
@@ -304,21 +294,18 @@ class Locks(PostgresPlugin):
     def _graph_config(self):
         first_graph = True
         for i, lock_info in enumerate(sorted(self.ACCEPTED_LOCK_NAMES)):
-            waiting_color, granted_color = self.COLORS[i]
             print(dedent(
                 '''\
-                {lock.name}_granted.label {lock.label} (granted)
+                {lock.name}_waiting.label {lock.label}
+                {lock.name}_waiting.draw {style}
+                {lock.name}_waiting.min 0
+                {lock.name}_waiting.graph no
+                {lock.name}_granted.label {lock.label}
                 {lock.name}_granted.draw {style}
                 {lock.name}_granted.min 0
-                {lock.name}_granted.colour {gcolour}
-                {lock.name}_waiting.label {lock.label} (waiting)
-                {lock.name}_waiting.draw STACK
-                {lock.name}_waiting.min 0
-                {lock.name}_waiting.colour {wcolour}
+                {lock.name}_granted.negative {lock.name}_waiting
                 '''.format(lock=lock_info,
-                           style='AREA' if first_graph else 'STACK',
-                           gcolour=granted_color,
-                           wcolour=waiting_color)))
+                           style='AREA' if first_graph else 'STACK',)))
             first_graph = False
 
     def get_stats(self):
@@ -392,7 +379,7 @@ class Locks(PostgresPlugin):
         print(dedent(
             '''\
             graph_args --base 1000
-            graph_vlabel Number of locks
+            graph_vlabel # of locks: granted(+) / waiting(-)
             graph_printf %3.0lf
             '''))
 
