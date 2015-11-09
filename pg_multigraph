@@ -9,6 +9,11 @@ Changes to Official Perl Plugins:
 
     * Locks only show both waiting and granted locks. The same lock has the same
       color hue. Granted locks are muc brighter than waiting locks.
+    * Skipping postgres_transactions -- I don't see a use-case. Can someone
+      elaborate?
+    * Removed index and seqscan fetches from tuple access.
+    * Renamed "tuple" access to "row" access to be more in line with the
+      official docs.
 '''
 
 from __future__ import print_function
