@@ -784,6 +784,103 @@ class ScanTypes(PostgresPlugin):
             self._graph_config()
 
 
+class RowAccess(PostgresPlugin):
+    '''
+    This can be merged with ScanTypes as they both access the same statistics
+    table!
+    '''
+
+    NAME = 'row_access'
+    TITLE = 'Row Access'
+    FIELDS = [
+        ('n_tup_ins', 'Inserts', 'Number of rows inserted'),
+        ('n_tup_upd', 'Updates', 'Number of rows updated'),
+        ('n_tup_del', 'Deletes', 'Number of rows deleted'),
+        ('n_tup_hot_upd', 'HOT Updates',
+         'Number of rows HOT updated (i.e., with no separate index update '
+         'required)'),
+    ]
+
+    def get_stats(self):
+        # we need to get stats for each DB. We need to create new connections
+        # for each.
+        dbnames = self.all_databases
+
+        # Fetch stats for each DB
+        stats_query = dedent(
+            '''\
+            SELECT
+                SUM(n_tup_ins) AS n_tup_ins,
+                SUM(n_tup_upd) AS n_tup_upd,
+                SUM(n_tup_del) AS n_tup_del,
+                SUM(n_tup_hot_upd) AS n_tup_hot_upd
+            FROM pg_stat_user_tables;
+            ''')
+
+        stats = {}
+        for dbname in dbnames:
+            try:
+                localcon = connect(
+                    construct_dsn(dbname,
+                                  self.user,
+                                  self.password,
+                                  self.host,
+                                  self.port))
+            except Exception as exc:
+                LOG.error(exc)
+                continue
+
+            cursor = localcon.cursor(cursor_factory=DictCursor)
+            cursor.execute(stats_query)
+            stats[dbname] = cursor.fetchone() or {}
+            cursor.close()
+            localcon.close()
+        return stats
+
+    def _print_values(self, values):
+        for field, _, _ in self.FIELDS:
+            print('%s.value %s' % (field, values.get(field, 0) or 0))
+
+    def _graph_config(self):
+        for name, label, info in self.FIELDS:
+            print('%s.label %s' % (name, label))
+            print('%s.info %s' % (name, info))
+            print('%s.min 0' % name)
+            print('%s.type DERIVE' % name)
+            print('%s.draw LINE1' % name)
+
+    def fetch(self):
+        super(RowAccess, self).fetch()
+        stats = self.get_stats()
+
+        sums = {}
+        for count in stats.values():
+            for name, _, _ in self.FIELDS:
+                current_value = sums.setdefault(name, 0) or 0
+                actual = count.get(name, 0) or 0
+                sums[name] = current_value + actual
+        self._print_values(sums)
+
+        for dbname in self.all_databases:
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            self._print_values(stats.get(dbname, {}))
+
+    def config(self):
+        super(RowAccess, self).config()
+        print(dedent(
+            '''\
+            graph_args --base 1000
+            graph_vlabel \# of rows
+            graph_printf %3.0lf
+            '''))
+        self._graph_config()
+
+        for dbname in self.all_databases:
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print('graph_title %s for %s' % (self.TITLE, dbname))
+            self._graph_config()
+
+
 def main(action):
     dbname = getenv('PG_DBNAME', 'template1')
     user = getenv('PG_USER', 'postgres')
