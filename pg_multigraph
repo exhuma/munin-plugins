@@ -189,6 +189,7 @@ class Connections(PostgresPlugin):
             graph_vlabel connections
             graph_order waiting query_running idle idle_transaction unknown
             graph_printf %3.0lf
+            graph_scale no
             waiting.label Waiting for lock
             waiting.draw AREA
             query_running.label Active query
@@ -386,6 +387,7 @@ class Locks(PostgresPlugin):
             graph_args --base 1000
             graph_vlabel # of locks: granted(+) / waiting(-)
             graph_printf %3.0lf
+            graph_scale no
             '''))
 
         self._graph_config()
@@ -524,6 +526,7 @@ class IOPlugin(PostgresPlugin):
             graph_args --base 1000
             graph_vlabel blocks unbuffered (-) / buffered (+)
             graph_printf %3.0lf
+            graph_scale no
             '''))
         self._graph_config()
 
@@ -789,6 +792,7 @@ class ScanTypes(PostgresPlugin):
             graph_args --base 1000
             graph_vlabel \# of scans
             graph_printf %3.0lf
+            graph_scale no
             '''))
         self._graph_config()
 
@@ -886,6 +890,7 @@ class RowAccess(PostgresPlugin):
             graph_args --base 1000
             graph_vlabel \# of rows
             graph_printf %3.0lf
+            graph_scale no
             '''))
         self._graph_config()
 
