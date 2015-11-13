@@ -35,6 +35,7 @@ ConnectionCounter = namedtuple(
 Lock = namedtuple('Lock', 'mode, granted')
 GraphedValue = namedtuple('GraphedValue', 'name, label, doc')
 DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
+QueryAge = namedtuple('QueryAge', 'dbname query_age transact_age')
 
 
 def find_subclasses(cls):
@@ -405,7 +406,8 @@ class QueryAges(PostgresPlugin):
             '''\
             SELECT
                 datname,
-                MAX(extract(EPOCH FROM NOW() - query_start))
+                MAX(extract(EPOCH FROM NOW() - query_start)),
+                MAX(extract(EPOCH FROM NOW() - xact_start))
             FROM pg_stat_activity
             GROUP BY datname
             ''')
@@ -414,8 +416,8 @@ class QueryAges(PostgresPlugin):
         oldest_queries = cursor.fetchall()
         cursor.close()
         output = {}
-        for dbname, age in oldest_queries:
-            output[dbname] = age
+        for dbname, age, transact_age in oldest_queries:
+            output[dbname] = QueryAge(dbname, age, transact_age)
 
         # The above query only returns rows for databases with actual
         # waiting/granted locks. We always want all DBs to be monitored though.
@@ -424,7 +426,7 @@ class QueryAges(PostgresPlugin):
         # TODO If we do this before the cursor loop, we can use a
         # dict-comprehension
         for row in self.all_databases:
-            output.setdefault(row, 0)
+            output.setdefault(row, QueryAge(row, 0, 0))
         return output
 
     def fetch(self):
@@ -432,13 +434,17 @@ class QueryAges(PostgresPlugin):
         stats = self.get_stats()
 
         max_age = 0
+        max_tx_age = 0
         for row in stats.values():
-            max_age = max(max_age, row)
+            max_age = max(max_age, row.query_age)
+            max_tx_age = max(max_tx_age, row.transact_age)
         print('age.value %f' % max_age)
+        print('tx_age.value %f' % max_tx_age)
 
         for dbname, value in sorted(stats.items()):
             print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('age.value %f' % value)
+            print('age.value %f' % value.query_age)
+            print('tx_age.value %f' % value.transact_age)
 
     def config(self):
         super(QueryAges, self).config()
@@ -449,14 +455,18 @@ class QueryAges(PostgresPlugin):
             graph_vlabel Query Age (seconds)
             graph_printf %3.2lf
             age.label Age
+            tx_age.label Transaction Age
             age.min 0
+            tx_age.min 0
             '''))
 
-        for dbname, value in stats.items():
+        for dbname, _ in stats.items():
             print('multigraph %s.%s' % (self.graph_name, dbname))
             print('graph_title %s for %s' % (self.TITLE, dbname))
             print('age.label Age')
+            print('tx_age.label Transaction Age')
             print('age.min 0')
+            print('tx_age.min 0')
 
 
 class IOPlugin(PostgresPlugin):
