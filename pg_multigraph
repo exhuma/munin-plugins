@@ -1,18 +1,90 @@
 #!/usr/bin/env python
-
 '''
-Munin Postgres Plugins
+=head1 Combined Postgres Plugin for Munin
 
-TODO doc
 
-Changes to Official Perl Plugins:
+This plugin monitors several aspects of a PostgreSQL DB Cluster.
 
-    * Locks show both waiting and granted locks.
-    * Skipping postgres_transactions -- I don't see a use-case. Can someone
-      elaborate?
-    * Removed index and seqscan fetches from tuple access.
-    * Renamed "tuple" access to "row" access to be more in line with the
-      official docs.
+The plugin creates several multi-level graphs showing aggregated graphs on the
+main munin dashboard. A more details breakdown is accessible by clicking on the
+graphs.
+
+Currently the plugin supports the following graphs:
+
+
+=over
+
+=item * connections -- connections by user
+
+=item * locks -- Acquired Locks
+
+=item * query_ages -- Query and transaction length/ages
+
+=item * row_access -- Types of row accesses.
+
+=item * scantypes -- used scan types.
+
+=item * sizes -- Database sizes.
+
+=item * tableio -- Disk/Buffer I/O for tables.
+
+=item * sequenceio -- Disk/Buffer I/O for sequences.
+
+=item * indexio -- Disk/Buffer I/O for indices
+
+=back
+
+=head1 Configuration
+
+As usual with munin-plugins this plugin can be configured using several
+environment variables (see the munin docs for details). The variables are:
+
+
+=over
+
+=item * C<PG_DBNAME>
+
+The database name for the initial connection. Some graphs need to connect to the
+other existing DBs. This is only for the initial connection.
+
+Default = template1
+
+=item * C<PG_USER>
+
+The username to use for the initial connection. Default = postgres
+
+=item * C<PG_PASSWORD>
+
+The password to use for the initial connection. Leaving this out will make a
+passwordless connection. Default = empty.
+
+=item * C<PG_HOST>
+
+The hostname to use for the initial connection. Leaving this out will make a
+connection using the unix domain socket. Default = empty
+
+=item * C<PG_PORT>
+
+The port to use for the initial connection. Leaving this out will use the
+default port.
+
+=item * C<PG_MULTIGRAPHS>
+
+A comma-separated list of graphs to generate. Using C<__all__>, or leaving this
+option out will generate all graphs. The names are referenced above.
+
+=back
+
+
+=head1 TODO
+
+=over
+
+=item * postgres_transactions will be implemented later.
+
+=back
+
+=cut
 '''
 
 from __future__ import print_function
