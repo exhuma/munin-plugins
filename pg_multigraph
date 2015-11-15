@@ -186,19 +186,24 @@ class Connections(PostgresPlugin):
         common_config_block = dedent(
             '''\
             graph_args --base 1000
-            graph_vlabel connections
+            graph_vlabel Active Connections
             graph_order waiting query_running idle idle_transaction unknown
             graph_printf %3.0lf
             graph_scale no
             waiting.label Waiting for lock
+            waiting.info Connections which are waiting for a lock to be released
             waiting.draw AREA
             query_running.label Active query
+            query_running.info Connections with running queries.
             query_running.draw STACK
             idle.label Idle connections
+            idle.info Connections which are currently not doing anything.
             idle.draw STACK
             idle_transaction.label Idle transaction
+            idle_transaction.info Connections which are not doing anything, but have an unfinished transaction open.
             idle_transaction.draw STACK
             unknown.label unknown
+            unknown.info Connections where munin did not have the access rights to get more details.
             unknown.draw STACK
             ''')
 
@@ -246,7 +251,7 @@ class Sizes(PostgresPlugin):
         print(dedent(
             '''\
             graph_args --base 1024
-            graph_vlabel Size in Bytes
+            graph_vlabel Size (bytes)
             '''))
 
         first_graph = True
@@ -255,6 +260,7 @@ class Sizes(PostgresPlugin):
                 '''\
                 {clean_name}.info Size in Bytes for database {clean_name}
                 {clean_name}.label {raw_name}
+                {clean_name}.info Total disk size occupied by this DB. This includes all DB objects.
                 {clean_name}.draw {style}
                 {clean_name}.min 0
                 '''.format(raw_name=dbname,
@@ -273,6 +279,7 @@ class Sizes(PostgresPlugin):
             size.min 0
             size.draw AREA
             size.label Size (in Bytes)
+            size.info Total disk size occupied by this DB. This includes all DB objects.
             ''')
         for dbname, value in stats.items():
             print(template.format(title=self.TITLE,
@@ -287,14 +294,14 @@ class Locks(PostgresPlugin):
     TITLE = 'Locks'
 
     ACCEPTED_LOCK_NAMES = {
-        GraphedValue('accesssharelock', 'Access share', ''),
-        GraphedValue('rowsharelock', 'Row share', ''),
-        GraphedValue('rowexclusivelock', 'Row excl.', ''),
-        GraphedValue('shareupdateexclusivelock', 'Share upd. excl.', ''),
-        GraphedValue('sharelock', 'Share', ''),
-        GraphedValue('sharerowexclusivelock', 'Share row excl.', ''),
-        GraphedValue('exclusivelock', 'Exclusive', ''),
-        GraphedValue('accessexclusivelock', 'Access excl.', ''),
+        GraphedValue('accesssharelock', 'Access share', 'The SELECT command acquires a lock of this mode on referenced tables. In general, any query that only reads a table and does not modify it will acquire this lock mode.'),
+        GraphedValue('rowsharelock', 'Row share', 'The SELECT FOR UPDATE and SELECT FOR SHARE commands acquire a lock of this mode on the target table(s) (in addition to ACCESS SHARE locks on any other tables that are referenced but not selected FOR UPDATE/FOR SHARE).'),
+        GraphedValue('rowexclusivelock', 'Row excl.', 'The commands UPDATE, DELETE, and INSERT acquire this lock mode on the target table (in addition to ACCESS SHARE locks on any other referenced tables). In general, this lock mode will be acquired by any command that modifies data in a table.'),
+        GraphedValue('shareupdateexclusivelock', 'Share upd. excl.', 'Acquired by VACUUM (without FULL), ANALYZE, CREATE INDEX CONCURRENTLY, and some forms of ALTER TABLE.'),
+        GraphedValue('sharelock', 'Share', 'Acquired by CREATE INDEX (without CONCURRENTLY).'),
+        GraphedValue('sharerowexclusivelock', 'Share row excl.', 'This lock mode is not automatically acquired by any PostgreSQL command.'),
+        GraphedValue('exclusivelock', 'Exclusive', 'This lock mode is not automatically acquired on tables by any PostgreSQL command.'),
+        GraphedValue('accessexclusivelock', 'Access excl.', 'Acquired by the ALTER TABLE, DROP TABLE, TRUNCATE, REINDEX, CLUSTER, and VACUUM FULL commands. This is also the default lock mode for LOCK TABLE statements that do not specify a mode explicitly.'),
     }
 
     def _graph_config(self):
@@ -303,10 +310,12 @@ class Locks(PostgresPlugin):
             print(dedent(
                 '''\
                 {lock.name}_waiting.label {lock.label}
+                {lock.name}_waiting.info {lock.doc}
                 {lock.name}_waiting.draw {style}
                 {lock.name}_waiting.min 0
                 {lock.name}_waiting.graph no
                 {lock.name}_granted.label {lock.label}
+                {lock.name}_granted.info {lock.doc}
                 {lock.name}_granted.draw {style}
                 {lock.name}_granted.min 0
                 {lock.name}_granted.negative {lock.name}_waiting
@@ -385,7 +394,7 @@ class Locks(PostgresPlugin):
         print(dedent(
             '''\
             graph_args --base 1000
-            graph_vlabel # of locks: granted(+) / waiting(-)
+            graph_vlabel locks: granted(+) / waiting(-)
             graph_printf %3.0lf
             graph_scale no
             '''))
@@ -457,7 +466,9 @@ class QueryAges(PostgresPlugin):
             graph_vlabel Query Age (seconds)
             graph_printf %3.2lf
             age.label Age
+            age.info The time in seconds oldest query has been actively running.
             tx_age.label Transaction Age
+            tx_age.info The time in seconds the oldest transaction has been existing.
             age.min 0
             tx_age.min 0
             '''))
@@ -466,7 +477,9 @@ class QueryAges(PostgresPlugin):
             print('multigraph %s.%s' % (self.graph_name, dbname))
             print('graph_title %s for %s' % (self.TITLE, dbname))
             print('age.label Age')
+            print('age.info The time in seconds the oldest query has been actively running.')
             print('tx_age.label Transaction Age')
+            print('tx_age.info The time in seconds the oldest transaction has been existing.')
             print('age.min 0')
             print('tx_age.min 0')
 
@@ -549,27 +562,25 @@ class TableDiskIO(IOPlugin):
          ''),
         ('heap_blks_hit',
          'Heap blocks',
-         'Number of disk blocks read (-) / buffered (+)'),
+         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
         ('idx_blks_read',
          'Index blocks',
          ''),
         ('idx_blks_hit',
          'Index blocks',
-         'Number of disk blocks read (-) / buffered (+) from all indexes'),
+         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
         ('toast_blks_read',
          'TOAST blocks',
          ''),
         ('toast_blks_hit',
          'TOAST blocks',
-         'Number of disk blocks read (-) / buffered (+) from TOAST tables '
-         '(if any)'),
+         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
         ('tidx_blks_read',
          'TOAST index blocks',
          ''),
         ('tidx_blks_hit',
          'TOAST index blocks',
-         'Number of disk blocks read (-) / buffered (+) from TOAST table '
-         'indexes (if any)'),
+         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
     ]
 
     def get_stats(self):
@@ -625,7 +636,7 @@ class IndexDiskIO(IOPlugin):
          ''),
         ('idx_blks_hit',
          'Index blocks',
-         'Number of index blocks read (-) / buffered (+)'),
+         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
     ]
 
     def get_stats(self):
@@ -676,7 +687,7 @@ class SequencesDiskIO(IOPlugin):
          ''),
         ('blks_hit',
          'Sequence blocks',
-         'Number of block IOs for sequences\\nread (-) / buffered (+)'),
+         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
     ]
 
     def get_stats(self):
@@ -719,8 +730,10 @@ class ScanTypes(PostgresPlugin):
     NAME = 'scantypes'
     TITLE = 'Scan Types'
     FIELDS = [
-        ('idx_scan', 'Index scans', 'TODO'),  # TODO better docs
-        ('seq_scan', 'Sequential scans', 'TODO'),  # TODO better docs
+        ('idx_scan', 'Index scans',
+         'Number of index scans initiated on this table'),
+        ('seq_scan', 'Sequential scans',
+         'Number of sequential scans initiated on this table'),
     ]
 
     def get_stats(self):
@@ -790,7 +803,7 @@ class ScanTypes(PostgresPlugin):
         print(dedent(
             '''\
             graph_args --base 1000
-            graph_vlabel \# of scans
+            graph_vlabel \# of scans per ${graph_period}
             graph_printf %3.0lf
             graph_scale no
             '''))
