@@ -166,7 +166,7 @@ class PostgresPlugin(object):
 
     def config(self):
         print('multigraph %s' % self.graph_name)
-        print('graph_category postgresql_multi')
+        print('graph_category postgresql')
         print('graph_title %s' % self.TITLE)
 
     @property
