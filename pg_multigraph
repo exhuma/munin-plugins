@@ -34,6 +34,8 @@ Currently the plugin supports the following graphs:
 
 =item * indexio -- Disk/Buffer I/O for indices
 
+=item * transactions -- Number of committed/rolled-back transactions.
+
 =back
 
 =head1 Configuration
@@ -77,15 +79,6 @@ option out will generate all graphs. The names are referenced above.
 
 =back
 
-
-=head1 TODO
-
-=over
-
-=item * postgres_transactions will be implemented later.
-
-=back
-
 =cut
 '''
 
@@ -117,6 +110,7 @@ Lock = namedtuple('Lock', 'mode, granted')
 GraphedValue = namedtuple('GraphedValue', 'name, label, doc')
 DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
 QueryAge = namedtuple('QueryAge', 'dbname query_age transact_age')
+TxStats = namedtuple('TxStats', 'dbname committed rolled_back')
 
 
 def find_subclasses(cls):
@@ -992,6 +986,84 @@ class RowAccess(PostgresPlugin):
             print('multigraph %s.%s' % (self.graph_name, dbname))
             print('graph_title %s for %s' % (self.TITLE, dbname))
             self._graph_config()
+
+
+class Transactions(PostgresPlugin):
+    '''
+    TODO can be merged with Locks and Sizes (they use the same view).
+    '''
+
+    NAME = 'transactions'
+    TITLE = 'Transactions'
+
+    def get_stats(self):
+        cursor = self.connection.cursor()
+        cursor.execute(dedent('''\
+            SELECT
+                datname,
+                pg_stat_get_db_xact_commit(oid),
+                pg_stat_get_db_xact_rollback(oid)
+            FROM pg_database'''))
+
+        stats = cursor.fetchall()
+        cursor.close()
+        return {row[0]: TxStats(row[0], row[1], row[2]) for row in stats}
+
+    def fetch(self):
+        super(Transactions, self).fetch()
+        stats = self.get_stats()
+
+        total_committed = sum([v.committed for v in stats.values()])
+        total_rolled_back = sum([v.rolled_back for v in stats.values()])
+        print('committed.value %s' % total_committed)
+        print('rolled_back.value %s' % total_rolled_back)
+
+        for dbname, value in stats.items():
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print('committed.value %s' % value.committed)
+            print('rolled_back.value %s' % value.rolled_back)
+
+    def config(self):
+        super(Transactions, self).config()
+        stats = self.get_stats()
+        print(dedent(
+            '''\
+            graph_args --base 1000
+            graph_scale no
+            graph_vlabel \# transactions
+            '''))
+
+        print(dedent(
+            '''\
+            committed.label Committed Transactions
+            committed.draw AREA
+            committed.min 0
+            committed.type DERIVE
+            rollback.label Rolled back Transactions
+            rollback.draw STACK
+            rollback.min 0
+            rollback.type DERIVE
+            '''))
+
+        # Scale each graph relative to the biggest DB
+        template = dedent(
+            '''\
+            multigraph {graph_name}.{dbname}
+            graph_title {title} for {dbname}
+            graph_args --base 1000
+            committed.min 0
+            committed.draw AREA
+            committed.label Committed Transactions
+            committed.type DERIVE
+            rollback.min 0
+            rollback.draw STACK
+            rollback.label Rolled back Transactions
+            rollback.type DERIVE
+            ''')
+        for dbname in stats:
+            print(template.format(title=self.TITLE,
+                                  graph_name=self.graph_name,
+                                  dbname=dbname))
 
 
 def main(action):
