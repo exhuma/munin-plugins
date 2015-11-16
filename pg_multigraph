@@ -492,8 +492,8 @@ class QueryAges(PostgresPlugin):
             '''\
             SELECT
                 datname,
-                MAX(extract(EPOCH FROM NOW() - query_start)),
-                MAX(extract(EPOCH FROM NOW() - xact_start))
+                COALESCE(MAX(extract(EPOCH FROM NOW() - query_start)), 0),
+                COALESCE(MAX(extract(EPOCH FROM NOW() - xact_start)), 0)
             FROM pg_stat_activity
             GROUP BY datname
             ''')
