@@ -948,12 +948,14 @@ class RowAccess(PostgresPlugin):
             print('%s.value %s' % (field, values.get(field, 0) or 0))
 
     def _graph_config(self):
+        first_graph = True
         for name, label, info in self.FIELDS:
             print('%s.label %s' % (name, label))
             print('%s.info %s' % (name, info))
             print('%s.min 0' % name)
             print('%s.type DERIVE' % name)
-            print('%s.draw LINE1' % name)
+            print('%s.draw %s' % (name, 'AREA' if first_graph else 'STACK'))
+            first_graph = False
 
     def fetch(self):
         super(RowAccess, self).fetch()
