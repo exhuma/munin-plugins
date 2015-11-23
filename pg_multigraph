@@ -503,7 +503,7 @@ class QueryAges(PostgresPlugin):
         cursor.close()
         output = {}
         for dbname, age, transact_age in oldest_queries:
-            output[dbname] = QueryAge(dbname, age, transact_age)
+            output[dbname] = QueryAge(dbname, age or 0.0, transact_age or 0.0)
 
         # The above query only returns rows for databases with actual
         # waiting/granted locks. We always want all DBs to be monitored though.
@@ -1016,12 +1016,12 @@ class Transactions(PostgresPlugin):
         total_committed = sum([v.committed for v in stats.values()])
         total_rolled_back = sum([v.rolled_back for v in stats.values()])
         print('committed.value %s' % total_committed)
-        print('rolled_back.value %s' % total_rolled_back)
+        print('rollback.value %s' % total_rolled_back)
 
         for dbname, value in stats.items():
             print('multigraph %s.%s' % (self.graph_name, dbname))
             print('committed.value %s' % value.committed)
-            print('rolled_back.value %s' % value.rolled_back)
+            print('rollback.value %s' % value.rolled_back)
 
     def config(self):
         super(Transactions, self).config()
