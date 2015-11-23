@@ -301,7 +301,7 @@ class Sizes(PostgresPlugin):
     NAME = 'sizes'
     TITLE = 'Database Sizes'
 
-    def get_stats(self):
+    def global_stats(self):
         cursor = self.connection.cursor()
         cursor.execute('SELECT datname, pg_database_size(datname) '
                        'FROM pg_database WHERE datistemplate=false')
@@ -309,28 +309,88 @@ class Sizes(PostgresPlugin):
         cursor.close()
         return {row[0]: row[1] for row in sizes}
 
+    def breakdown(self):
+        '''
+        given a specific DB, get detailed values. It will be broken down into:
+
+        - main data size
+        - visual map size
+        - free-space-map size
+        - toast size
+        - index size
+        '''
+
+
+        # we need to get stats for each DB. We need to create new connections
+        # for each.
+        dbnames = self.all_databases
+
+        # Fetch stats for each DB
+        query = dedent(
+            '''\
+            SELECT
+                SUM(pg_relation_size(oid, 'main')) AS main_size,
+                SUM(pg_relation_size(oid, 'vm')) AS vm_size,
+                SUM(pg_relation_size(oid, 'fsm')) AS fsm_size,
+                SUM(
+                    CASE reltoastrelid
+                    WHEN 0 THEN 0
+                    ELSE pg_total_relation_size(reltoastrelid)
+                    END
+                ) AS toast_size,
+                SUM(pg_indexes_size(oid)) AS indexes_size,
+                pg_database_size(current_database()) AS database_size
+                FROM pg_class
+                WHERE relkind not in ('t', 'i')''')
+
+        stats = {}
+        for dbname in dbnames:
+            try:
+                localcon = connect(
+                    construct_dsn(dbname,
+                                  self.user,
+                                  self.password,
+                                  self.host,
+                                  self.port))
+            except Exception as exc:
+                LOG.error(exc)
+                continue
+
+            cursor = localcon.cursor(cursor_factory=DictCursor)
+            cursor.execute(query)
+            stats[dbname] = cursor.fetchone() or {}
+            cursor.close()
+            localcon.close()
+        return stats
+
     def fetch(self):
         super(Sizes, self).fetch()
-        stats = self.get_stats()
+        stats = self.global_stats()
+        breakdown = self.breakdown()
 
         for dbname, value in stats.items():
             print('%s.value %s' % (INVALID_CHARS.sub('_', dbname), value))
 
-        for dbname, value in stats.items():
+        for dbname, value in breakdown.items():
             print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('size.value %s' % value)
+            print('main.value %s' % value['main_size'])
+            print('vm.value %s' % value['vm_size'])
+            print('fsm.value %s' % value['fsm_size'])
+            print('toast.value %s' % value['toast_size'])
+            print('indexes.value %s' % value['indexes_size'])
+            print('size.value %s' % value['database_size'])
 
     def config(self):
         super(Sizes, self).config()
-        stats = self.get_stats()
         print(dedent(
             '''\
-            graph_args --base 1024
+            graph_args --base 1024 --lower-limit 0
             graph_vlabel Size (bytes)
             '''))
 
         first_graph = True
-        for dbname in sorted(stats):
+        all_dbs = self.all_databases
+        for dbname in all_dbs:
             print(dedent(
                 '''\
                 {clean_name}.info Size in Bytes for database {clean_name}
@@ -344,23 +404,34 @@ class Sizes(PostgresPlugin):
             first_graph = False
 
         # Scale each graph relative to the biggest DB
-        upper_limit = max(stats.values())
         template = dedent(
             '''\
             multigraph {graph_name}.{dbname}
             graph_title {title} for {dbname}
-            graph_args --base 1024 --upper-limit {upper_limit}
-            graph_order size
+            graph_args --base 1024 --lower-limit 0
+            main.label main data
+            main.min 0
+            main.draw AREA
+            vm.label visual map
+            vm.min 0
+            vm.draw STACK
+            fsm.label free space map
+            fsm.min 0
+            fsm.draw STACK
+            toast.label TOAST
+            toast.min 0
+            toast.draw STACK
+            indexes.label indexes
+            indexes.min 0
+            indexes.draw STACK
+            size.label Overall size
             size.min 0
-            size.draw AREA
-            size.label Size (in Bytes)
-            size.info Total disk size occupied by this DB. This includes all DB objects.
+            size.draw LINE1
             ''')
-        for dbname, value in stats.items():
+        for dbname in all_dbs:
             print(template.format(title=self.TITLE,
                                   graph_name=self.graph_name,
-                                  dbname=dbname,
-                                  upper_limit=upper_limit))
+                                  dbname=dbname))
 
 
 class Locks(PostgresPlugin):
