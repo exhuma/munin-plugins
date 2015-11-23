@@ -606,28 +606,28 @@ class QueryAges(PostgresPlugin):
     def config(self):
         super(QueryAges, self).config()
         stats = self.get_stats()
-        print(dedent(
+        config_template = dedent(
             '''\
             graph_args --base 1000
             graph_vlabel Query Age (seconds)
             graph_printf %3.2lf
             age.label Age
             age.info The time in seconds oldest query has been actively running.
+            age.min 0
+            age.warning 3600
+            age.critical 43200
             tx_age.label Transaction Age
             tx_age.info The time in seconds the oldest transaction has been existing.
-            age.min 0
             tx_age.min 0
-            '''))
+            tx_age.warning 3600
+            tx_age.critical 43200
+            ''')
+        print(config_template)
 
         for dbname, _ in stats.items():
             print('multigraph %s.%s' % (self.graph_name, dbname))
             print('graph_title %s for %s' % (self.TITLE, dbname))
-            print('age.label Age')
-            print('age.info The time in seconds the oldest query has been actively running.')
-            print('tx_age.label Transaction Age')
-            print('tx_age.info The time in seconds the oldest transaction has been existing.')
-            print('age.min 0')
-            print('tx_age.min 0')
+            print(config_template)
 
 
 class IOPlugin(PostgresPlugin):
