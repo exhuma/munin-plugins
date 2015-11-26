@@ -341,7 +341,8 @@ class Sizes(PostgresPlugin):
                 SUM(pg_indexes_size(oid)) AS indexes_size,
                 pg_database_size(current_database()) AS database_size
                 FROM pg_class
-                WHERE relkind not in ('t', 'i')''')
+                WHERE relkind not in ('t', 'i')
+                AND NOT relisshared''')
 
         stats = {}
         for dbname in dbnames:
