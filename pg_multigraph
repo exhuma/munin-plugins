@@ -314,7 +314,7 @@ class Sizes(PostgresPlugin):
         given a specific DB, get detailed values. It will be broken down into:
 
         - main data size
-        - visual map size
+        - visibility map size
         - free-space-map size
         - toast size
         - index size
@@ -412,21 +412,27 @@ class Sizes(PostgresPlugin):
             main.label main data
             main.min 0
             main.draw AREA
-            vm.label visual map
+            main.info The disk usage by the main data of the tables.
+            vm.label visibility map
             vm.min 0
             vm.draw STACK
+            vm.info The size of the "visibility map". Contains metadata for VACUUM.
             fsm.label free space map
             fsm.min 0
             fsm.draw STACK
+            fsm.info The Free Space map contains metadata where unused/reclaimable pages are located on disk.
             toast.label TOAST
             toast.min 0
             toast.draw STACK
+            toast.info If data does not fit into one page, the TOAST allows the DB to store the remaining data.
             indexes.label indexes
             indexes.min 0
             indexes.draw STACK
+            indexes.info Size of all indexes.
             size.label Overall size
             size.min 0
             size.draw LINE1
+            size.info Size of the DB folder on disk (may contain additional files so the size may be larger).
             ''')
         for dbname in all_dbs:
             print(template.format(title=self.TITLE,
