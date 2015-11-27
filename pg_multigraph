@@ -430,7 +430,7 @@ class Sizes(PostgresPlugin):
             indexes.min 0
             indexes.draw STACK
             indexes.info Size of all indexes.
-            size.label Overall size
+            size.label filesize on disk
             size.min 0
             size.draw LINE1
             size.info Size of the DB folder on disk (may contain additional files so the size may be larger).
