@@ -1,0 +1,38 @@
+#!/bin/bash
+
+#
+# Graphs the disk-space used up by dangling volumes. You probably want this to stay at 0
+#
+
+DOCKER=${docker_path:-/usr/bin/docker}
+VOLUME_FOLDER=${volume_path:-/var/lib/docker/volumes}
+
+
+case $1 in
+    autoconf)
+        if [ -x ${DOCKER} ] ; then
+            echo "yes"
+        else
+            echo "no ('${DOCKER}' is not executable. You can override the path using the 'docker_path' environment variable)!"
+        fi
+        exit 0;;
+    config)
+        echo "graph_title Dangling Volumes Size"
+        echo "graph_vlabel size"
+        echo "graph_category docker"
+        echo "graph_printf %3.0lf"
+        echo "graph_args --base 1024 --lower-limit 0"
+        echo "dangling_size.label Size of dangling volumes"
+        echo "upgrades.draw AREA"
+    exit 0;;
+esac
+
+
+TOTAL_SPACE=0
+for line in $(${DOCKER} volume ls -f dangling=true | cut -c "21-" | tail -n +2); do
+    folder_size=$(du -s ${VOLUME_FOLDER}/${line} | cut -f 1)
+    TOTAL_SPACE=$(($TOTAL_SPACE + $folder_size))
+done
+
+
+echo dangling_size.value ${TOTAL_SPACE}
