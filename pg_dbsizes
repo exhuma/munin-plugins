@@ -19,6 +19,21 @@ def cleanup(connection):
     return fun
 
 
+def construct_dsn(dbname, user, password='', host='', port=0):
+    elements = [
+        'dbname=%s' % dbname,
+        'user=%s' % user
+    ]
+    if password:
+        elements.append('password=%s' % password)
+    if host:
+        elements.append('host=%s' % host)
+    if port:
+        elements.append('port=%d' % port)
+
+    return ' '.join(elements)
+
+
 def get_stats(connection):
     cursor = connection.cursor()
     cursor.execute('SELECT datname, pg_database_size(datname) '
@@ -71,10 +86,19 @@ def render_stats(stats):
 
 
 if __name__ == '__main__':
-    connection = psycopg2.connect(user=getenv('PGUSER'),
-                                  password=getenv('PGPASS'),
-                                  port=int(getenv('PGPORT')),
-                                  database='template1')
+    dbname = getenv('PG_DBNAME', 'template1')
+    user = getenv('PG_USER', 'postgres')
+    password = getenv('PG_PASSWORD', '')
+    host = getenv('PG_HOST', '')
+    port = int(getenv('PG_PORT', 0))
+
+    connection = psycopg2.connect(construct_dsn(
+        dbname,
+        user,
+        password,
+        host,
+        port)
+    )
     atexit.register(cleanup(connection))
 
     try:
