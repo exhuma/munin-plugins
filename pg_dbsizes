@@ -19,6 +19,21 @@ def cleanup(connection):
     return fun
 
 
+def construct_dsn(dbname, user, password='', host='', port=0):
+    elements = [
+        'dbname=%s' % dbname,
+        'user=%s' % user
+    ]
+    if password:
+        elements.append('password=%s' % password)
+    if host:
+        elements.append('host=%s' % host)
+    if port:
+        elements.append('port=%d' % port)
+
+    return ' '.join(elements)
+
+
 def get_stats(connection):
     cursor = connection.cursor()
     cursor.execute('SELECT datname, pg_database_size(datname) '
