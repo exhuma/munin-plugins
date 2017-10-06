@@ -92,7 +92,7 @@ import re
 import sys
 
 try:
-    from psycopg2 import connect
+    from psycopg2 import connect as _connect
     from psycopg2.extras import DictCursor
     PSYCOPG2_AVAILABLE = True  # used for autoconf
 except ImportError as exc:
@@ -113,12 +113,264 @@ QueryAge = namedtuple('QueryAge', 'dbname query_age transact_age')
 TxStats = namedtuple('TxStats', 'dbname committed rolled_back')
 
 
+# --- Query Definitions ------------------------------------------------------
+#
+#  The query definitions below are a 2-dimensional dictionary. The first
+#  dimenstion is the name of the query, the second is the minimum version where
+#  this query is needed. This allows us to adapt to changes in in postgres
+#  versions.
+#
+#  If the minimum version is not known, use (0, 0, 0). This way the query will
+#  be used by default.
+#
+#  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+QUERIES = {
+    'list_databases': {
+        (0, 0, 0): 'SELECT datname FROM pg_database WHERE datistemplate=false'
+    },
+    'global_sizes': {
+        (0, 0, 0): ('SELECT datname, pg_database_size(datname) '
+                    'FROM pg_database WHERE datistemplate=false'),
+    },
+    'current_user': {
+        (0, 0, 0): 'SELECT CURRENT_USER',
+    },
+    'locks': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                db.datname,
+                LOWER(mode),
+                locktype,
+                granted,
+                COUNT(mode)
+            FROM pg_database db
+            FULL OUTER JOIN pg_locks lck ON (db.oid=lck.database)
+            GROUP BY db.datname, mode, locktype, granted;
+            ''')
+    },
+    'query_ages': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                datname,
+                COALESCE(MAX(extract(EPOCH FROM NOW() - query_start)), 0),
+                COALESCE(MAX(extract(EPOCH FROM NOW() - xact_start)), 0)
+            FROM pg_stat_activity
+            WHERE current_query NOT LIKE '<IDLE%'
+            GROUP BY datname
+            '''),
+        (9, 2, 0): dedent(
+            '''\
+            SELECT
+                datname,
+                COALESCE(MAX(extract(EPOCH FROM NOW() - query_start)), 0),
+                COALESCE(MAX(extract(EPOCH FROM NOW() - xact_start)), 0)
+            FROM pg_stat_activity
+            WHERE state NOT LIKE '%idle%'
+            GROUP BY datname
+            ''')
+    },
+    'disk_io': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                SUM(heap_blks_read) AS heap_blks_read,
+                SUM(heap_blks_hit) AS heap_blks_hit,
+                SUM(idx_blks_read) AS idx_blks_read,
+                SUM(idx_blks_hit) AS idx_blks_hit,
+                SUM(toast_blks_read) AS toast_blks_read,
+                SUM(toast_blks_hit) AS toast_blks_hit,
+                SUM(tidx_blks_read) AS tidx_blks_read
+            FROM pg_statio_user_tables;
+            ''')
+    },
+    'index_io': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                SUM(idx_blks_read) AS idx_blks_read,
+                SUM(idx_blks_hit) AS idx_blks_hit
+            FROM pg_statio_user_indexes;
+            ''')
+    },
+    'sequences_io': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                SUM(idx_blks_read) AS idx_blks_read,
+                SUM(idx_blks_hit) AS idx_blks_hit
+            FROM pg_statio_user_indexes;
+            ''')
+    },
+    'scan_types': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                SUM(idx_scan) AS idx_scan,
+                SUM(seq_scan) AS seq_scan
+            FROM pg_stat_user_tables;
+            ''')
+    },
+    'row_access': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                SUM(n_tup_ins) AS n_tup_ins,
+                SUM(n_tup_upd) AS n_tup_upd,
+                SUM(n_tup_del) AS n_tup_del,
+                SUM(n_tup_hot_upd) AS n_tup_hot_upd
+            FROM pg_stat_user_tables;
+            ''')
+    },
+    'transactions': {
+        (0, 0, 0): dedent('''\
+            SELECT
+                datname,
+                pg_stat_get_db_xact_commit(oid),
+                pg_stat_get_db_xact_rollback(oid)
+            FROM pg_database''')
+    },
+    'size_by_db': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                SUM(pg_relation_size(oid, 'main')) AS main_size,
+                SUM(pg_relation_size(oid, 'vm')) AS vm_size,
+                SUM(pg_relation_size(oid, 'fsm')) AS fsm_size,
+                SUM(
+                    CASE reltoastrelid
+                    WHEN 0 THEN 0
+                    ELSE pg_total_relation_size(reltoastrelid)
+                    END
+                ) AS toast_size,
+                SUM(pg_indexes_size(oid)) AS indexes_size,
+                pg_database_size(current_database()) AS database_size
+                FROM pg_class
+                WHERE relkind not in ('t', 'i')
+                AND NOT relisshared''')
+    },
+    'connections': {
+        (0, 0, 0): dedent(
+            '''\
+            WITH users AS (SELECT usename FROM pg_user),
+            conntype AS (SELECT u.usename, act.waiting,
+                current_query
+                FROM users u
+                LEFT JOIN pg_stat_activity act USING (usename))
+            SELECT
+                usename,
+                COUNT(CASE WHEN current_query='<IDLE>'
+                    THEN 1 END) AS idle,
+                COUNT(CASE WHEN current_query='<IDLE> in transaction'
+                    THEN 1 END) AS idle_tx,
+                COUNT(CASE WHEN current_query='<insufficient privilege>'
+                    THEN 1 END) AS unknown,
+                COUNT(CASE WHEN current_query NOT IN (
+                    '<IDLE>',
+                    '<IDLE> in transaction',
+                    '<insufficient privilege>')
+                    THEN 1 END) AS query_running,
+                COUNT(CASE WHEN waiting THEN 1 END) AS waiting
+            FROM conntype
+            GROUP BY usename
+            ORDER BY usename;'''),
+        (9, 2, 0): dedent(
+            '''\
+            WITH users AS (SELECT usename FROM pg_user),
+            conntype AS (SELECT u.usename, act.waiting,
+                state,
+                query
+                FROM users u
+                LEFT JOIN pg_stat_activity act USING (usename))
+            SELECT
+                usename,
+                COUNT(CASE WHEN state = 'idle'
+                    THEN 1 END) AS idle,
+                COUNT(CASE WHEN state like 'idle in transaction%'
+                    THEN 1 END) AS idle_tx,
+                COUNT(CASE WHEN state NOT IN (
+                    'idle',
+                    'idle in transaction',
+                    'idle in transaction (aborted)',
+                    'active')
+                    THEN 1 END) AS unknown,
+                COUNT(CASE WHEN state = 'active'
+                    THEN 1 END) AS query_running,
+                COUNT(CASE WHEN waiting THEN 1 END) AS waiting
+            FROM conntype
+            GROUP BY usename
+            ORDER BY usename;''')
+    }
+}
+
+# ----------------------------------------------------------------------------
+
+
+def connect(*args, **kwargs):
+    '''
+    Create a psycopg2 connection with autocommit ON.
+
+    This solves issues with calculations with ``NOW()``
+    '''
+    connection = _connect(*args, **kwargs)
+    connection.autocommit = True
+    return connection
+
+
 def find_subclasses(cls):
     output = set()
     for subcls in cls.__subclasses__():
         if hasattr(subcls, 'NAME'):
             output.add(subcls)
         output = output | find_subclasses(subcls)
+    return output
+
+
+def queries_for_version(queries, target_version):
+    '''
+    Reduces the data in *queries* to the best possible version.
+
+    The expected structure of *queries* is::
+
+        {
+            '<query_name>': {
+                <min_version_1>: <query>,
+                <min_version_2>: <query>,
+            }
+        }
+
+    Example::
+
+        {
+            'locks': {
+                (9, 1, 0): ('SELECT datname FROM pg_database WHERE '
+                            'datistemplate=false')
+            }
+        }
+
+    It will return the best matching query for the version given in
+    *target_version*.
+
+    Example::
+
+    >>> queries = {
+    ...     'foo': {
+    ...         (1, 0, 0): 'foo-100',
+    ...         (2, 0, 0): 'foo-200',
+    ...         (3, 0, 0): 'foo-300',
+    ...     }
+    ... }
+    >>> queries_for_version(queries, (2, 1, 0))
+    {'foo': 'foo-200'}
+    '''
+
+    output = {}
+    for query_name, variants in queries.items():
+        for version, query in sorted(variants.items(), key=lambda x: x[0]):
+            if target_version >= version:
+                output[query_name] = query
     return output
 
 
@@ -154,8 +406,12 @@ class PostgresPlugin(object):
         self.host = host
         self.port = port
         self._dbnames = []
+        self.queries = None
 
     def fetch(self):
+        if self.queries is None:
+            version_identifier = get_pg_version(self.connection)
+            self.queries = queries_for_version(QUERIES, version_identifier)
         print('multigraph %s' % self.graph_name)
 
     def config(self):
@@ -172,8 +428,7 @@ class PostgresPlugin(object):
         if self._dbnames:
             return self._dbnames
         cursor = self.connection.cursor()
-        cursor.execute('SELECT datname FROM pg_database '
-                       'WHERE datistemplate=false')
+        cursor.execute(self.queries['list_databases'])
         dbnames = [row[0] for row in cursor]
         cursor.close()
         return dbnames
@@ -187,36 +442,12 @@ class Connections(PostgresPlugin):
     def all_connections(self):
         # Fetch the current username of the connection
         cursor = self.connection.cursor()
-        cursor.execute('SELECT CURRENT_USER')
+        cursor.execute(self.queries['current_user'])
         whoami = cursor.fetchone()[0]
         cursor.close()
 
-        query = dedent(
-            '''\
-            WITH users AS (SELECT usename FROM pg_user),
-            conntype AS (SELECT u.usename, act.waiting,
-                current_query
-                FROM users u
-                LEFT JOIN pg_stat_activity act USING (usename))
-            SELECT
-                usename,
-                COUNT(CASE WHEN current_query='<IDLE>'
-                    THEN 1 END) AS idle,
-                COUNT(CASE WHEN current_query='<IDLE> in transaction'
-                    THEN 1 END) AS idle_tx,
-                COUNT(CASE WHEN current_query='<insufficient privilege>'
-                    THEN 1 END) AS unknown,
-                COUNT(CASE WHEN current_query NOT IN (
-                    '<IDLE>',
-                    '<IDLE> in transaction',
-                    '<insufficient privilege>')
-                    THEN 1 END) AS query_running,
-                COUNT(CASE WHEN waiting THEN 1 END) AS waiting
-            FROM conntype
-            GROUP BY usename
-            ORDER BY usename;''')
         cursor = self.connection.cursor()
-        cursor.execute(query)
+        cursor.execute(self.queries['connections'])
         output = []
         for username, idle, idle_tx, unknown, query_running, waiting in cursor:
             if username == whoami:  # Subtract our own active query
@@ -303,8 +534,7 @@ class Sizes(PostgresPlugin):
 
     def global_stats(self):
         cursor = self.connection.cursor()
-        cursor.execute('SELECT datname, pg_database_size(datname) '
-                       'FROM pg_database WHERE datistemplate=false')
+        cursor.execute(self.queries['global_sizes'])
         sizes = cursor.fetchall()
         cursor.close()
         return {row[0]: row[1] for row in sizes}
@@ -326,24 +556,6 @@ class Sizes(PostgresPlugin):
         dbnames = self.all_databases
 
         # Fetch stats for each DB
-        query = dedent(
-            '''\
-            SELECT
-                SUM(pg_relation_size(oid, 'main')) AS main_size,
-                SUM(pg_relation_size(oid, 'vm')) AS vm_size,
-                SUM(pg_relation_size(oid, 'fsm')) AS fsm_size,
-                SUM(
-                    CASE reltoastrelid
-                    WHEN 0 THEN 0
-                    ELSE pg_total_relation_size(reltoastrelid)
-                    END
-                ) AS toast_size,
-                SUM(pg_indexes_size(oid)) AS indexes_size,
-                pg_database_size(current_database()) AS database_size
-                FROM pg_class
-                WHERE relkind not in ('t', 'i')
-                AND NOT relisshared''')
-
         stats = {}
         for dbname in dbnames:
             try:
@@ -358,7 +570,7 @@ class Sizes(PostgresPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(query)
+            cursor.execute(self.queries['size_by_db'])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -477,20 +689,8 @@ class Locks(PostgresPlugin):
             first_graph = False
 
     def get_stats(self):
-        query = dedent(
-            '''\
-            SELECT
-                db.datname,
-                LOWER(mode),
-                locktype,
-                granted,
-                COUNT(mode)
-            FROM pg_database db
-            FULL OUTER JOIN pg_locks lck ON (db.oid=lck.database)
-            GROUP BY db.datname, mode, locktype, granted;
-            ''')
         cursor = self.connection.cursor()
-        cursor.execute(query)
+        cursor.execute(self.queries['locks'])
         locks = cursor.fetchall()
         cursor.close()
         output = {}
@@ -566,18 +766,8 @@ class QueryAges(PostgresPlugin):
     TITLE = 'Query Ages (seconds)'
 
     def get_stats(self):
-        query = dedent(
-            '''\
-            SELECT
-                datname,
-                COALESCE(MAX(extract(EPOCH FROM NOW() - query_start)), 0),
-                COALESCE(MAX(extract(EPOCH FROM NOW() - xact_start)), 0)
-            FROM pg_stat_activity
-            WHERE current_query NOT LIKE '<IDLE%'
-            GROUP BY datname
-            ''')
         cursor = self.connection.cursor()
-        cursor.execute(query)
+        cursor.execute(self.queries['query_ages'])
         oldest_queries = cursor.fetchall()
         cursor.close()
         output = {}
@@ -742,20 +932,6 @@ class TableDiskIO(IOPlugin):
         # for each.
         dbnames = self.all_databases
 
-        # Fetch stats for each DB
-        stats_query = dedent(
-            '''\
-            SELECT
-                SUM(heap_blks_read) AS heap_blks_read,
-                SUM(heap_blks_hit) AS heap_blks_hit,
-                SUM(idx_blks_read) AS idx_blks_read,
-                SUM(idx_blks_hit) AS idx_blks_hit,
-                SUM(toast_blks_read) AS toast_blks_read,
-                SUM(toast_blks_hit) AS toast_blks_hit,
-                SUM(tidx_blks_read) AS tidx_blks_read
-            FROM pg_statio_user_tables;
-            ''')
-
         stats = {}
         for dbname in dbnames:
             try:
@@ -770,7 +946,7 @@ class TableDiskIO(IOPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(stats_query)
+            cursor.execute(self.queries['disk_io'])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -798,15 +974,6 @@ class IndexDiskIO(IOPlugin):
         # for each.
         dbnames = self.all_databases
 
-        # Fetch stats for each DB
-        stats_query = dedent(
-            '''\
-            SELECT
-                SUM(idx_blks_read) AS idx_blks_read,
-                SUM(idx_blks_hit) AS idx_blks_hit
-            FROM pg_statio_user_indexes;
-            ''')
-
         stats = {}
         for dbname in dbnames:
             try:
@@ -821,7 +988,7 @@ class IndexDiskIO(IOPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(stats_query)
+            cursor.execute(self.queries['index_io'])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -849,15 +1016,6 @@ class SequencesDiskIO(IOPlugin):
         # for each.
         dbnames = self.all_databases
 
-        # Fetch stats for each DB
-        stats_query = dedent(
-            '''\
-            SELECT
-                SUM(idx_blks_read) AS idx_blks_read,
-                SUM(idx_blks_hit) AS idx_blks_hit
-            FROM pg_statio_user_indexes;
-            ''')
-
         stats = {}
         for dbname in dbnames:
             try:
@@ -872,7 +1030,7 @@ class SequencesDiskIO(IOPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(stats_query)
+            cursor.execute(self.queries['sequences_io'])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -895,15 +1053,6 @@ class ScanTypes(PostgresPlugin):
         # for each.
         dbnames = self.all_databases
 
-        # Fetch stats for each DB
-        stats_query = dedent(
-            '''\
-            SELECT
-                SUM(idx_scan) AS idx_scan,
-                SUM(seq_scan) AS seq_scan
-            FROM pg_stat_user_tables;
-            ''')
-
         stats = {}
         for dbname in dbnames:
             try:
@@ -918,7 +1067,7 @@ class ScanTypes(PostgresPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(stats_query)
+            cursor.execute(self.queries['scan_types'])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -991,17 +1140,6 @@ class RowAccess(PostgresPlugin):
         # for each.
         dbnames = self.all_databases
 
-        # Fetch stats for each DB
-        stats_query = dedent(
-            '''\
-            SELECT
-                SUM(n_tup_ins) AS n_tup_ins,
-                SUM(n_tup_upd) AS n_tup_upd,
-                SUM(n_tup_del) AS n_tup_del,
-                SUM(n_tup_hot_upd) AS n_tup_hot_upd
-            FROM pg_stat_user_tables;
-            ''')
-
         stats = {}
         for dbname in dbnames:
             try:
@@ -1016,7 +1154,7 @@ class RowAccess(PostgresPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(stats_query)
+            cursor.execute(self.queries['row_access'])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1079,12 +1217,7 @@ class Transactions(PostgresPlugin):
 
     def get_stats(self):
         cursor = self.connection.cursor()
-        cursor.execute(dedent('''\
-            SELECT
-                datname,
-                pg_stat_get_db_xact_commit(oid),
-                pg_stat_get_db_xact_rollback(oid)
-            FROM pg_database'''))
+        cursor.execute(self.queries['transactions'])
 
         stats = cursor.fetchall()
         cursor.close()
@@ -1145,6 +1278,23 @@ class Transactions(PostgresPlugin):
             print(template.format(title=self.TITLE,
                                   graph_name=self.graph_name,
                                   dbname=dbname))
+
+
+def get_pg_version(connection):
+    '''
+    Returns the posgtes server version as a tuple of integers.
+
+    Example:
+
+    >>> get_pg_version(conn)
+    (9, 5, 8)
+    '''
+    cursor = connection.cursor()
+    cursor.execute('SHOW server_version')
+    version_string = cursor.fetchone()[0]
+    cursor.close()
+    output = tuple(int(_) for _ in version_string.split('.'))
+    return output
 
 
 def main(action):
