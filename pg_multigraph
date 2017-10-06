@@ -415,6 +415,9 @@ class PostgresPlugin(object):
         print('multigraph %s' % self.graph_name)
 
     def config(self):
+        if self.queries is None:
+            version_identifier = get_pg_version(self.connection)
+            self.queries = queries_for_version(QUERIES, version_identifier)
         print('multigraph %s' % self.graph_name)
         print('graph_category postgresql')
         print('graph_title %s' % self.TITLE)
