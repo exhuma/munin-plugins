@@ -92,7 +92,7 @@ import re
 import sys
 
 try:
-    from psycopg2 import connect
+    from psycopg2 import connect as _connect
     from psycopg2.extras import DictCursor
     PSYCOPG2_AVAILABLE = True  # used for autoconf
 except ImportError as exc:
@@ -291,10 +291,20 @@ QUERIES = {
             GROUP BY usename
             ORDER BY usename;''')
     }
-    
 }
 
 # ----------------------------------------------------------------------------
+
+
+def connect(*args, **kwargs):
+    '''
+    Create a psycopg2 connection with autocommit ON.
+
+    This solves issues with calculations with ``NOW()``
+    '''
+    connection = _connect(*args, **kwargs)
+    connection.autocommit = True
+    return connection
 
 
 def find_subclasses(cls):
