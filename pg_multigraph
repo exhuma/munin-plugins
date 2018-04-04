@@ -36,6 +36,8 @@ Currently the plugin supports the following graphs:
 
 =item * transactions -- Number of committed/rolled-back transactions.
 
+=item * temp_bytes -- Bytes occupied by temporary files
+
 =back
 
 =head1 Configuration
