@@ -36,6 +36,8 @@ Currently the plugin supports the following graphs:
 
 =item * transactions -- Number of committed/rolled-back transactions.
 
+=item * temp_bytes -- Bytes occupied by temporary files
+
 =back
 
 =head1 Configuration
@@ -111,6 +113,7 @@ GraphedValue = namedtuple('GraphedValue', 'name, label, doc')
 DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
 QueryAge = namedtuple('QueryAge', 'dbname query_age transact_age')
 TxStats = namedtuple('TxStats', 'dbname committed rolled_back')
+TempBytesRow = namedtuple('TempBytesRow', 'dbname bytes')
 
 
 # --- Query Definitions ------------------------------------------------------
@@ -250,6 +253,15 @@ QUERIES = {
                 FROM pg_class
                 WHERE relkind not in ('t', 'i')
                 AND NOT relisshared''')
+    },
+    'temp_bytes': {
+        (0, 0, 0): dedent(
+            '''\
+            SELECT
+                datname,
+                temp_bytes
+            FROM
+                pg_stat_database''')
     },
     'connections': {
         (0, 0, 0): dedent(
@@ -1303,6 +1315,68 @@ class Transactions(PostgresPlugin):
             rollback.draw STACK
             rollback.label Rolled back Transactions
             rollback.type DERIVE
+            ''')
+        for dbname in stats:
+            print(template.format(title=self.TITLE,
+                                  graph_name=self.graph_name,
+                                  dbname=dbname))
+
+
+class TempBytes(PostgresPlugin):
+    '''
+    Graphs diskspace occupied by temporary files.
+    '''
+
+    NAME = 'temp_bytes'
+    TITLE = 'Change in Temporary Files'
+
+    def get_stats(self):
+        cursor = self.connection.cursor()
+        cursor.execute(self.queries['temp_bytes'])
+
+        stats = cursor.fetchall()
+        cursor.close()
+        return {row[0]: TempBytesRow(row[0], row[1]) for row in stats}
+
+    def fetch(self):
+        super(TempBytes, self).fetch()
+        stats = self.get_stats()
+
+        total_diskspace = sum([v.bytes for v in stats.values()])
+        print('bytes.value %s' % total_diskspace)
+
+        for dbname, value in stats.items():
+            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print('bytes.value %s' % value.bytes)
+
+    def config(self):
+        super(TempBytes, self).config()
+        stats = self.get_stats()
+        print(dedent(
+            '''\
+            graph_args --base 1024
+            graph_scale yes
+            graph_vlabel Change of Temp Files Size
+            '''))
+
+        print(dedent(
+            '''\
+            bytes.label Used diskspace
+            bytes.draw AREA
+            bytes.min 0
+            bytes.type DERIVE
+            '''))
+
+        # Scale each graph relative to the biggest DB
+        template = dedent(
+            '''\
+            multigraph {graph_name}.{dbname}
+            graph_title {title} for {dbname}
+            graph_args --base 1024
+            bytes.min 0
+            bytes.draw AREA
+            bytes.label Used diskspace
+            bytes.type DERIVE
             ''')
         for dbname in stats:
             print(template.format(title=self.TITLE,
