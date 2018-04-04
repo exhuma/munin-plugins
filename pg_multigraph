@@ -116,7 +116,7 @@ TxStats = namedtuple('TxStats', 'dbname committed rolled_back')
 # --- Query Definitions ------------------------------------------------------
 #
 #  The query definitions below are a 2-dimensional dictionary. The first
-#  dimenstion is the name of the query, the second is the minimum version where
+#  dimension is the name of the query, the second is the minimum version where
 #  this query is needed. This allows us to adapt to changes in in postgres
 #  versions.
 #
