@@ -1,6 +1,27 @@
 #!/usr/bin/env python
 #%# family=auto
 #%# capabilities=autoconf
+
+# pylint: disable=line-too-long, too-many-lines
+#
+# * The documentation sometimes requires fairly long lines which are more
+#   readable as long lines.
+# * This module is intended to be a monolithic script to make execution as easy
+#   as possible. No dependencies should be required and it should be directly
+#   executable which means it will have many lines.
+
+# pylint: disable=broad-except
+#
+# This code contains a bunch of broad except statements to ensure non-zero exit
+# codes when run for munin. Mainly when looping over databases where the
+# connection is refused so that only that one DB fails instead of all of them.
+# This is repeated fairly often so we disable the message globally.
+
+# pylint: disable=anomalous-backslash-in-string
+#
+# We use multiline strings fairly ofthen in docstrings. To make the source-code
+# line up properl we escape the first newline, which causes this pylint
+# message.
 '''
 =head1 Combined Postgres Plugin for Munin
 
@@ -359,6 +380,9 @@ def connect(*args, **kwargs):
 
 
 def find_subclasses(cls):
+    '''
+    Recursively resolve all subclasses of *cls* and return them as a set.
+    '''
     output = set()
     for subcls in cls.__subclasses__():
         if hasattr(subcls, 'NAME'):
@@ -414,6 +438,10 @@ def queries_for_version(queries, target_version):
 
 
 def construct_dsn(dbname, user, password='', host='', port=0):
+    '''
+    Given explicit keyword arguments, this will construct a DSN-string usable
+    in the *connect* method.
+    '''
     elements = [
         'dbname=%s' % dbname,
         'user=%s' % user
@@ -429,6 +457,9 @@ def construct_dsn(dbname, user, password='', host='', port=0):
 
 
 def parse_args():
+    '''
+    Parses CLI arguments and returns an :py:class:`argparse.Namespace` object.
+    '''
     parser = argparse.ArgumentParser()
     parser.add_argument('action', nargs='?',
                         help='The munin action to perform',
@@ -437,6 +468,11 @@ def parse_args():
 
 
 class PostgresPlugin(object):
+    '''
+    Base class for a PostgreSQL plugin for munin.
+    '''
+    TITLE = 'unknown plugin'
+    NAME = 'unknown plugin'
 
     def __init__(self, connection, user, password, host, port):
         self.connection = connection
@@ -448,12 +484,18 @@ class PostgresPlugin(object):
         self.queries = None
 
     def fetch(self):
+        '''
+        Fetch the values of the plugin and print them to stdout.
+        '''
         if self.queries is None:
             version_identifier = get_pg_version(self.connection)
             self.queries = queries_for_version(QUERIES, version_identifier)
         print('multigraph %s' % self.graph_name)
 
     def config(self):
+        '''
+        Print the plugin configuration to stdout.
+        '''
         if self.queries is None:
             version_identifier = get_pg_version(self.connection)
             self.queries = queries_for_version(QUERIES, version_identifier)
@@ -463,10 +505,17 @@ class PostgresPlugin(object):
 
     @property
     def graph_name(self):
+        '''
+        Returns the graph-name for multigraphs
+        '''
         return 'pgmg_%s' % self.NAME
 
     @property
     def all_databases(self):
+        '''
+        Returns a list of all databases. The list is cached during the
+        execution of this script.
+        '''
         if self._dbnames:
             return self._dbnames
         cursor = self.connection.cursor()
@@ -477,11 +526,18 @@ class PostgresPlugin(object):
 
 
 class Connections(PostgresPlugin):
+    '''
+    A plugin that shows details of database connections.
+    '''
 
     NAME = 'connections'
     TITLE = 'Connections'
 
     def all_connections(self):
+        '''
+        Returns a list of all open connections as
+        :py:class:`.ConnectionCounter` instances.
+        '''
         # Fetch the current username of the connection
         cursor = self.connection.cursor()
         cursor.execute(self.queries['current_user'])
@@ -570,11 +626,18 @@ class Connections(PostgresPlugin):
 
 
 class Sizes(PostgresPlugin):
+    '''
+    Returns the disk-sizes for each databse.
+    '''
 
     NAME = 'sizes'
     TITLE = 'Database Sizes'
 
     def global_stats(self):
+        '''
+        Returns a dictionary mapping the database name to its overall (no
+        breakdown) disk-size.
+        '''
         cursor = self.connection.cursor()
         cursor.execute(self.queries['global_sizes'])
         sizes = cursor.fetchall()
@@ -696,6 +759,9 @@ class Sizes(PostgresPlugin):
 
 
 class Locks(PostgresPlugin):
+    '''
+    Retrieve statistics for existing locks on the database.
+    '''
 
     NAME = 'locks'
     TITLE = 'Locks'
@@ -713,7 +779,7 @@ class Locks(PostgresPlugin):
 
     def _graph_config(self):
         first_graph = True
-        for i, lock_info in enumerate(sorted(self.ACCEPTED_LOCK_NAMES)):
+        for lock_info in sorted(self.ACCEPTED_LOCK_NAMES):
             print(dedent(
                 '''\
                 {lock.name}_waiting.label {lock.label}
@@ -731,12 +797,24 @@ class Locks(PostgresPlugin):
             first_graph = False
 
     def get_stats(self):
+        '''
+        Fetches the statistics and returns them as dictionary mapping the
+        database name to another dictionary mapping :py:class:`Lock` objects to
+        their respective counts. Example output::
+
+            {
+                'mydatabase': {
+                    Lock('AccessShareLock', True): 2,
+                    Lock('ExclusiveLock', False): 1
+                }
+            }
+        '''
         cursor = self.connection.cursor()
         cursor.execute(self.queries['locks'])
         locks = cursor.fetchall()
         cursor.close()
         output = {}
-        for dbname, lockmode, locktype, granted, count in locks:
+        for dbname, lockmode, unused_locktype, granted, count in locks:
             if dbname is None:
                 # locks without related DB, are "global" locks
                 dbname = '__pg__database__'
@@ -796,18 +874,26 @@ class Locks(PostgresPlugin):
 
         self._graph_config()
 
-        for dbname, value in stats.items():
+        for dbname, _ in stats.items():
             print('multigraph %s.%s' % (self.graph_name, dbname))
             print('graph_title %s for %s' % (self.TITLE, dbname))
             self._graph_config()
 
 
 class QueryAges(PostgresPlugin):
+    '''
+    This plugin will return all running queries with their respective age in
+    seconds.
+    '''
 
     NAME = 'query_ages'
     TITLE = 'Query Ages (seconds)'
 
     def get_stats(self):
+        '''
+        Retrieve the statistics and return a dictionary mapping the database
+        name to a :py:class:`.QueryAge` instance.
+        '''
         cursor = self.connection.cursor()
         cursor.execute(self.queries['query_ages'])
         oldest_queries = cursor.fetchall()
@@ -871,6 +957,12 @@ class QueryAges(PostgresPlugin):
 
 
 class IOPlugin(PostgresPlugin):
+    '''
+    Base class for plugins giving IO information.
+    '''
+
+    #: A list of tuples as: (column-name, userfriendly-name, description)
+    FIELDS = []
 
     def _print_values(self, values):
         for field, _, _ in self.FIELDS:
@@ -883,7 +975,7 @@ class IOPlugin(PostgresPlugin):
 
         first_graph = True
         for read, hit in field_pairs:
-            read_name, read_label, read_info = read
+            read_name, read_label, _ = read
             hit_name, hit_label, hit_info = hit
             stack_type = 'AREA' if first_graph else 'STACK'
 
@@ -901,6 +993,12 @@ class IOPlugin(PostgresPlugin):
             print('%s.negative %s' % (hit_name, read_name))
             print('%s.draw %s' % (hit_name, stack_type))
             first_graph = False
+
+    def get_stats(self):
+        '''
+        Fetches the statistics. Must be overridden in concrete implementations.
+        '''
+        raise NotImplementedError('Not yet implemented')
 
     def fetch(self):
         super(IOPlugin, self).fetch()
@@ -936,6 +1034,9 @@ class IOPlugin(PostgresPlugin):
 
 
 class TableDiskIO(IOPlugin):
+    '''
+    Plugin to fetch disk I/O data per table.
+    '''
 
     NAME = 'tableio'
     TITLE = 'Disk/Buffer IOs (User Tables)'
@@ -996,6 +1097,9 @@ class TableDiskIO(IOPlugin):
 
 
 class IndexDiskIO(IOPlugin):
+    '''
+    Plugin to fetch disk I/O operations per database-index.
+    '''
 
     NAME = 'indexio'
     TITLE = 'Disk/Buffer IOs (Indices)'
@@ -1038,6 +1142,9 @@ class IndexDiskIO(IOPlugin):
 
 
 class SequencesDiskIO(IOPlugin):
+    '''
+    Plugin to fetch disk I/O operations per database-sequence.
+    '''
 
     NAME = 'sequenceio'
     TITLE = 'Disk/Buffer IOs (Sequences)'
@@ -1080,6 +1187,9 @@ class SequencesDiskIO(IOPlugin):
 
 
 class ScanTypes(PostgresPlugin):
+    '''
+    Plugin to fetch the number of different scans performed on the database.
+    '''
 
     NAME = 'scantypes'
     TITLE = 'Scan Types'
@@ -1091,6 +1201,12 @@ class ScanTypes(PostgresPlugin):
     ]
 
     def get_stats(self):
+        '''
+        Fetches the statistics.
+
+        Returns a dictionary mapping the database name to another dictionary
+        which in turn maps the different values to the counters.
+        '''
         # we need to get stats for each DB. We need to create new connections
         # for each.
         dbnames = self.all_databases
@@ -1178,6 +1294,11 @@ class RowAccess(PostgresPlugin):
     ]
 
     def get_stats(self):
+        '''
+        Retrieve the stats and return them as dictionary mapping the database
+        name to another dictionary which in turn maps the statistics colums to
+        their values.
+        '''
         # we need to get stats for each DB. We need to create new connections
         # for each.
         dbnames = self.all_databases
@@ -1258,6 +1379,10 @@ class Transactions(PostgresPlugin):
     TITLE = 'Transactions'
 
     def get_stats(self):
+        '''
+        Fetch the statistics returning a dictionary mapping the database name
+        to :py:class:`.TxStats` instances.
+        '''
         cursor = self.connection.cursor()
         cursor.execute(self.queries['transactions'])
 
@@ -1331,6 +1456,10 @@ class TempBytes(PostgresPlugin):
     TITLE = 'Change in Temporary Files'
 
     def get_stats(self):
+        '''
+        Fetch the statistics returning a dictionary mapping the database name
+        to :py:class:`.TempBytesRow` instances.
+        '''
         cursor = self.connection.cursor()
         cursor.execute(self.queries['temp_bytes'])
 
@@ -1402,6 +1531,11 @@ def get_pg_version(connection):
 
 
 def main(action):
+    '''
+    The main entry point of the application.
+
+    :param action: The munin-action to perform.
+    '''
 
     if action == 'autoconf':
         if PSYCOPG2_AVAILABLE:
