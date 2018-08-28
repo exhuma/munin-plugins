@@ -1530,14 +1530,17 @@ def get_pg_version(connection):
     return output
 
 
-def main(action):
+def main():
     '''
     The main entry point of the application.
 
     :param action: The munin-action to perform.
     '''
 
-    if action == 'autoconf':
+    logging.basicConfig()
+    args = parse_args()
+
+    if args.action == 'autoconf':
         if PSYCOPG2_AVAILABLE:
             # All we need to be able to run is the psycopg2 module. That
             # check is covered by the top-level imports.
@@ -1575,7 +1578,7 @@ def main(action):
     try:
         for cls in active_plugins:
             instance = cls(connection, user, password, host, port)
-            if action == 'config':
+            if args.action == 'config':
                 instance.config()
             else:
                 instance.fetch()
@@ -1586,6 +1589,4 @@ def main(action):
 
 
 if __name__ == '__main__':
-    logging.basicConfig()
-    args = parse_args()
-    sys.exit(main(args.action))
+    sys.exit(main())
