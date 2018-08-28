@@ -385,7 +385,7 @@ def find_subclasses(cls):
     '''
     output = set()
     for subcls in cls.__subclasses__():
-        if hasattr(subcls, 'NAME'):
+        if subcls.NAME:
             output.add(subcls)
         output = output | find_subclasses(subcls)
     return output
@@ -1533,8 +1533,6 @@ def get_pg_version(connection):
 def main():
     '''
     The main entry point of the application.
-
-    :param action: The munin-action to perform.
     '''
 
     logging.basicConfig()
