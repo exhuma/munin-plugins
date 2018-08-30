@@ -1,16 +1,31 @@
 '''
 Unit Tests for pg_multigraph.
 '''
+# pylint: disable=redefined-outer-name
+#
+# pytest relies on having the same outer-name for fixtures.
 
 from imp import load_source
 
+import pytest
 
-def test_min():
+
+@pytest.fixture
+def pgmg():
+    '''
+    Dynamically loads the module.
+
+    As it has no ".py" extension it cannot be loaded using a normal "import"
+    statement.
+    '''
+    return load_source('pgmg', 'pg_multigraph')
+
+
+def test_min(pgmg):
     '''
     Retrieving a query with the exact version than one of the defined versions
     should return that value.
     '''
-    pgmg = load_source('pgmg', 'pg_multigraph')
     queries = {
         'foo': {
             (1, 0, 0): 'foo-100',
@@ -22,12 +37,11 @@ def test_min():
     assert result == {'foo': 'foo-100'}
 
 
-def test_mid():
+def test_mid(pgmg):
     '''
     Retrieving a query with the exact version than one of the defined versions
     should return that value.
     '''
-    pgmg = load_source('pgmg', 'pg_multigraph')
     queries = {
         'foo': {
             (1, 0, 0): 'foo-100',
@@ -39,12 +53,11 @@ def test_mid():
     assert result == {'foo': 'foo-200'}
 
 
-def test_max():
+def test_max(pgmg):
     '''
     Retrieving a query with the exact version than one of the defined versions
     should return that value.
     '''
-    pgmg = load_source('pgmg', 'pg_multigraph')
     queries = {
         'foo': {
             (1, 0, 0): 'foo-100',
@@ -56,12 +69,11 @@ def test_max():
     assert result == {'foo': 'foo-300'}
 
 
-def test_below_min():
+def test_below_min(pgmg):
     '''
     Retrieving a query with a version lower than any defined version should
     return an empty value.
     '''
-    pgmg = load_source('pgmg', 'pg_multigraph')
     queries = {
         'foo': {
             (1, 0, 0): 'foo-100',
@@ -73,12 +85,11 @@ def test_below_min():
     assert result == {}
 
 
-def test_between_versions():
+def test_between_versions(pgmg):
     '''
     Retrieving a query with a version larger laying between two defined
     versions should return the next *lower* one.
     '''
-    pgmg = load_source('pgmg', 'pg_multigraph')
     queries = {
         'foo': {
             (1, 0, 0): 'foo-100',
@@ -90,12 +101,11 @@ def test_between_versions():
     assert result == {'foo': 'foo-200'}
 
 
-def test_after_max():
+def test_after_max(pgmg):
     '''
     Retrieving a query with a version larger than any specified version should
     return the latest value.
     '''
-    pgmg = load_source('pgmg', 'pg_multigraph')
     queries = {
         'foo': {
             (1, 0, 0): 'foo-100',
