@@ -427,6 +427,8 @@ def queries_for_version(queries, target_version):
     ... }
     >>> queries_for_version(queries, (2, 1, 0))
     {'foo': 'foo-200'}
+    >>> queries_for_version(queries, (10, 0))
+    {'foo': 'foo-300'}
     '''
 
     output = {}
@@ -1519,7 +1521,8 @@ def get_pg_version(connection):
 
     Example:
 
-    >>> get_pg_version(conn)
+    >>> conn = connect('dbname=template1')  # doctest: +SKIP
+    >>> get_pg_version(conn)  # doctest: +SKIP
     (9, 5, 8)
     '''
     cursor = connection.cursor()
