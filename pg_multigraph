@@ -213,20 +213,27 @@ class MultiVersionQuery(metaclass=ABCMeta):
         return last_visited
 
 
-
-
-QUERIES = {
-    'list_databases': {
+class ListDatabaseQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): 'SELECT datname FROM pg_database WHERE datistemplate=false'
-    },
-    'global_sizes': {
+    }
+
+
+class GlobalSIzesQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): ('SELECT datname, pg_database_size(datname) '
                     'FROM pg_database WHERE datistemplate=false'),
-    },
-    'current_user': {
+    }
+
+
+class CurrentUserQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): 'SELECT CURRENT_USER',
     },
-    'locks': {
+
+
+class LocksQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -239,8 +246,11 @@ QUERIES = {
             FULL OUTER JOIN pg_locks lck ON (db.oid=lck.database)
             GROUP BY db.datname, mode, locktype, granted;
             ''')
-    },
-    'query_ages': {
+    }
+
+
+class QueryAgesQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -261,8 +271,11 @@ QUERIES = {
             WHERE state NOT LIKE '%idle%'
             GROUP BY datname
             ''')
-    },
-    'disk_io': {
+    }
+
+
+class DiskIOQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -275,8 +288,11 @@ QUERIES = {
                 SUM(tidx_blks_read) AS tidx_blks_read
             FROM pg_statio_user_tables;
             ''')
-    },
-    'index_io': {
+    }
+
+
+class IndexIOQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -284,8 +300,11 @@ QUERIES = {
                 SUM(idx_blks_hit) AS idx_blks_hit
             FROM pg_statio_user_indexes;
             ''')
-    },
-    'sequences_io': {
+    }
+
+
+class SequencesIOQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -293,8 +312,11 @@ QUERIES = {
                 SUM(blks_hit) AS blks_hit
             FROM pg_statio_user_sequences;
             ''')
-    },
-    'scan_types': {
+    }
+
+
+class ScanTypesQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -302,8 +324,11 @@ QUERIES = {
                 SUM(seq_scan) AS seq_scan
             FROM pg_stat_user_tables;
             ''')
-    },
-    'row_access': {
+    }
+
+
+class RowAccessQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -313,16 +338,22 @@ QUERIES = {
                 SUM(n_tup_hot_upd) AS n_tup_hot_upd
             FROM pg_stat_user_tables;
             ''')
-    },
-    'transactions': {
+    }
+
+
+class TransactionsQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent('''\
             SELECT
                 datname,
                 pg_stat_get_db_xact_commit(oid),
                 pg_stat_get_db_xact_rollback(oid)
             FROM pg_database''')
-    },
-    'size_by_db': {
+    }
+
+
+class SizeByDBQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -340,8 +371,11 @@ QUERIES = {
                 FROM pg_class
                 WHERE relkind not in ('t', 'i')
                 AND NOT relisshared''')
-    },
-    'temp_bytes': {
+    }
+
+
+class TempBytesQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             SELECT
@@ -349,8 +383,11 @@ QUERIES = {
                 temp_bytes
             FROM
                 pg_stat_database''')
-    },
-    'connections': {
+    }
+
+
+class ConnectionsQuery(MultiVersionQuery):
+    VARIANTS = {
         (0, 0, 0): dedent(
             '''\
             WITH users AS (SELECT usename FROM pg_user),
@@ -429,7 +466,7 @@ QUERIES = {
             GROUP BY usename
             ORDER BY usename;''')
     }
-}
+
 
 # ----------------------------------------------------------------------------
 
