@@ -1,5 +1,5 @@
 '''
-Unit Tests for pg_multigraph.
+Unit Tests for multiversioned queries for pg_multigraph
 '''
 # pylint: disable=redefined-outer-name
 #
@@ -11,107 +11,72 @@ import pytest
 
 
 @pytest.fixture
-def pgmg():
+def mv_query():
     '''
-    Dynamically loads the module.
+    Create a fake new multi-versioned query and returns the instance.
+    '''
+    pgmg = load_source('pgmg', 'pg_multigraph')
 
-    As it has no ".py" extension it cannot be loaded using a normal "import"
-    statement.
-    '''
-    return load_source('pgmg', 'pg_multigraph')
+    class FakeQuery(pgmg.MultiVersionQuery):
 
-
-def test_min(pgmg):
-    '''
-    Retrieving a query with the exact version than one of the defined versions
-    should return that value.
-    '''
-    queries = {
-        'foo': {
+        VARIANTS = {
             (1, 0, 0): 'foo-100',
             (2, 0, 0): 'foo-200',
             (3, 0, 0): 'foo-300',
         }
-    }
-    result = pgmg.queries_for_version(queries, (1, 0, 0))
-    assert result == {'foo': 'foo-100'}
+
+    return FakeQuery()
 
 
-def test_mid(pgmg):
+def test_min(mv_query):
     '''
     Retrieving a query with the exact version than one of the defined versions
     should return that value.
     '''
-    queries = {
-        'foo': {
-            (1, 0, 0): 'foo-100',
-            (2, 0, 0): 'foo-200',
-            (3, 0, 0): 'foo-300',
-        }
-    }
-    result = pgmg.queries_for_version(queries, (2, 0, 0))
-    assert result == {'foo': 'foo-200'}
+    result = mv_query.get((1, 0, 0))
+    assert result == 'foo-100'
 
 
-def test_max(pgmg):
+def test_mid(mv_query):
     '''
     Retrieving a query with the exact version than one of the defined versions
     should return that value.
     '''
-    queries = {
-        'foo': {
-            (1, 0, 0): 'foo-100',
-            (2, 0, 0): 'foo-200',
-            (3, 0, 0): 'foo-300',
-        }
-    }
-    result = pgmg.queries_for_version(queries, (3, 0, 0))
-    assert result == {'foo': 'foo-300'}
+    result = mv_query.get((2, 0, 0))
+    assert result == 'foo-200'
 
 
-def test_below_min(pgmg):
+def test_max(mv_query):
+    '''
+    Retrieving a query with the exact version than one of the defined versions
+    should return that value.
+    '''
+    result = mv_query.get((3, 0, 0))
+    assert result == 'foo-300'
+
+
+def test_below_min(mv_query):
     '''
     Retrieving a query with a version lower than any defined version should
     return an empty value.
     '''
-    queries = {
-        'foo': {
-            (1, 0, 0): 'foo-100',
-            (2, 0, 0): 'foo-200',
-            (3, 0, 0): 'foo-300',
-        }
-    }
-    result = pgmg.queries_for_version(queries, (0, 5, 0))
-    assert result == {}
+    result = mv_query.get((0, 5, 0))
+    assert result == ''
 
 
-def test_between_versions(pgmg):
+def test_between_versions(mv_query):
     '''
     Retrieving a query with a version larger laying between two defined
     versions should return the next *lower* one.
     '''
-    queries = {
-        'foo': {
-            (1, 0, 0): 'foo-100',
-            (2, 0, 0): 'foo-200',
-            (3, 0, 0): 'foo-300',
-        }
-    }
-    result = pgmg.queries_for_version(queries, (2, 1, 0))
-    assert result == {'foo': 'foo-200'}
+    result = mv_query.get((2, 1, 0))
+    assert result == 'foo-200'
 
 
-def test_after_max(pgmg):
+def test_after_max(mv_query):
     '''
     Retrieving a query with a version larger than any specified version should
     return the latest value.
     '''
-    queries = {
-        'foo': {
-            (1, 0, 0): 'foo-100',
-            (2, 0, 0): 'foo-200',
-            (3, 0, 0): 'foo-300',
-        }
-    }
-    result = pgmg.queries_for_version(queries, (4, 0, 0))
-    assert result == {'foo': 'foo-300'}
+    result = mv_query.get((4, 0, 0))
+    assert result == 'foo-300'

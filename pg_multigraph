@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #%# family=auto
 #%# capabilities=autoconf
 
@@ -105,14 +105,15 @@ option out will generate all graphs. The names are referenced above.
 =cut
 '''
 
-from __future__ import print_function
-from collections import namedtuple
-from os import getenv
-from textwrap import dedent
 import argparse
 import logging
 import re
 import sys
+from abc import ABCMeta, abstractmethod
+from collections import namedtuple
+from os import getenv
+from textwrap import dedent
+from typing import Sequence, TypeVar
 
 try:
     from psycopg2 import connect as _connect
@@ -135,19 +136,84 @@ DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
 QueryAge = namedtuple('QueryAge', 'dbname query_age transact_age')
 TxStats = namedtuple('TxStats', 'dbname committed rolled_back')
 TempBytesRow = namedtuple('TempBytesRow', 'dbname bytes')
+T = TypeVar('T')
 
 
-# --- Query Definitions ------------------------------------------------------
-#
-#  The query definitions below are a 2-dimensional dictionary. The first
-#  dimension is the name of the query, the second is the minimum version where
-#  this query is needed. This allows us to adapt to changes in in postgres
-#  versions.
-#
-#  If the minimum version is not known, use (0, 0, 0). This way the query will
-#  be used by default.
-#
-#  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+def first_element(indexable: Sequence[T]) -> T:
+    '''
+    Returns the first element of a sequence object.
+
+    This is a helper function in order to avoid lambdas and enable
+    type-hinting.
+    '''
+    return indexable[0]
+
+
+class MultiVersionQuery(metaclass=ABCMeta):
+    '''
+    A "wrapper" object around SQL queries which automatically adapt to the
+    proper PostgreSQL version.
+
+    This is intended to be subclasses for each distinct query. The queries need
+    to be defined in the ``VARIANTS`` class attribute::
+
+        class MyQuery(MultiVersionQuery):
+
+            VARIANTS = {
+                <min_version_1>: <query>,
+                <min_version_2>: <query>,
+            }
+
+    Example::
+
+        class ExampleWithValues(MultiVersionQuery):
+            VARIANTS = {
+                (9, 1, 0): ('SELECT datname FROM pg_database WHERE '
+                            'datistemplate=false')
+            }
+    '''
+
+    #: Different Postgresl versions may need different queries to fetch the
+    #: statistics. VARIANTS contains a mapping from a version number to the
+    #: query. The version number reflects from which version onwards this query
+    #: can be used. These query variants should all return the same columns!
+    VARIANTS = {}
+
+    def get(self, target_version):
+        '''
+        Returns the query most appropriate for the target DB version.
+
+        :param target_version: The version of the database on which we want to
+            execute the query.
+
+        Example::
+
+        >>> class MyQuery(MultiVersionQuery):
+        ...
+        ...     VARIANTS = {
+        ...         (1, 0, 0): 'foo-100',
+        ...         (2, 0, 0): 'foo-200',
+        ...         (3, 0, 0): 'foo-300',
+        ...     }
+        ...
+        ... q = MyQuery()
+        >>> q.get((2, 1, 0))
+        {'foo': 'foo-200'}
+        >>> q.get((10, 0))
+        {'foo': 'foo-300'}
+        '''
+
+        last_visited = ''
+        for version, query in sorted(self.VARIANTS.items(), key=first_element):
+            if version == target_version:
+                return query
+            if version > target_version:
+                return last_visited
+            last_visited = query
+        return last_visited
+
+
+
 
 QUERIES = {
     'list_databases': {
@@ -388,54 +454,6 @@ def find_subclasses(cls):
         if subcls.NAME:
             output.add(subcls)
         output = output | find_subclasses(subcls)
-    return output
-
-
-def queries_for_version(queries, target_version):
-    '''
-    Reduces the data in *queries* to the best possible version.
-
-    The expected structure of *queries* is::
-
-        {
-            '<query_name>': {
-                <min_version_1>: <query>,
-                <min_version_2>: <query>,
-            }
-        }
-
-    Example::
-
-        {
-            'locks': {
-                (9, 1, 0): ('SELECT datname FROM pg_database WHERE '
-                            'datistemplate=false')
-            }
-        }
-
-    It will return the best matching query for the version given in
-    *target_version*.
-
-    Example::
-
-    >>> queries = {
-    ...     'foo': {
-    ...         (1, 0, 0): 'foo-100',
-    ...         (2, 0, 0): 'foo-200',
-    ...         (3, 0, 0): 'foo-300',
-    ...     }
-    ... }
-    >>> queries_for_version(queries, (2, 1, 0))
-    {'foo': 'foo-200'}
-    >>> queries_for_version(queries, (10, 0))
-    {'foo': 'foo-300'}
-    '''
-
-    output = {}
-    for query_name, variants in queries.items():
-        for version, query in sorted(variants.items(), key=lambda x: x[0]):
-            if target_version >= version:
-                output[query_name] = query
     return output
 
 
