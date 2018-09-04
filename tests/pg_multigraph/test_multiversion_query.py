@@ -27,8 +27,9 @@ def mv_query(pgmg):
     '''
     Create a fake new multi-versioned query and returns the instance.
     '''
-    class FakeQuery(pgmg.MultiVersionQuery):
 
+    class FakeQuery(pgmg.MultiVersionQuery):
+        NAME = 'fake-query'
         VARIANTS = {
             (1, 0, 0): 'foo-100',
             (2, 0, 0): 'foo-200',
@@ -90,3 +91,25 @@ def test_after_max(mv_query):
     '''
     result = mv_query.get((4, 0, 0))
     assert result == 'foo-300'
+
+
+def test_registry_class(pgmg):
+    Base = pgmg.MultiVersionQuery
+
+    class SubClass1(Base):
+        NAME = 'Class1'
+
+    class SubClass2(Base):
+        NAME = 'Class2'
+
+    class SubClass2_1(SubClass2):
+        NAME = 'Class2_1'
+
+    retrieved = Base.get_query('Class1')
+    assert retrieved == SubClass1
+
+    retrieved = Base.get_query('Class2')
+    assert retrieved == SubClass2
+
+    retrieved = Base.get_query('Class2_1')
+    assert retrieved == SubClass2_1

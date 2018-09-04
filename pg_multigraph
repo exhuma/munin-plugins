@@ -149,7 +149,38 @@ def first_element(indexable: Sequence[T]) -> T:
     return indexable[0]
 
 
-class MultiVersionQuery(metaclass=ABCMeta):
+class MultiVersionQueryRegisry(ABCMeta):
+    '''
+    A metaclass which automatically registers each subclass by name when it is
+    defined.
+
+    Each subclass must define the class-attribute ``NAME``
+
+    The classes can be retrieved using ``MultiVersionQueryRegisry.get_query``.
+    '''
+
+    #: The registry of classes mapping the defined names (via NAME) to the
+    #: class reference
+    REGISTRY = {}  # type: Dict[str, type]
+
+    def __new__(mcs, name, bases, namespace, **kwargs):
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        if cls.NAME in MultiVersionQueryRegisry.REGISTRY:
+            raise KeyError('%r has already been registered. Pleas use another '
+                           'name!' % cls.NAME)
+        MultiVersionQueryRegisry.REGISTRY[cls.NAME] = cls
+        return cls
+
+    @staticmethod
+    def get_query(name: str) -> 'MultiVersionQuery':
+        '''
+        Retrieves a class by defined name.
+        '''
+        return MultiVersionQueryRegisry.REGISTRY[name]
+
+
+
+class MultiVersionQuery(metaclass=MultiVersionQueryRegisry):
     '''
     A "wrapper" object around SQL queries which automatically adapt to the
     proper PostgreSQL version.
@@ -172,6 +203,9 @@ class MultiVersionQuery(metaclass=ABCMeta):
                             'datistemplate=false')
             }
     '''
+
+    #: The name of the query
+    NAME = 'null_query'
 
     #: Different Postgresl versions may need different queries to fetch the
     #: statistics. VARIANTS contains a mapping from a version number to the
@@ -214,12 +248,14 @@ class MultiVersionQuery(metaclass=ABCMeta):
 
 
 class ListDatabaseQuery(MultiVersionQuery):
+    NAME = 'db-list'
     VARIANTS = {
         (0, 0, 0): 'SELECT datname FROM pg_database WHERE datistemplate=false'
     }
 
 
-class GlobalSIzesQuery(MultiVersionQuery):
+class GlobalSizesQuery(MultiVersionQuery):
+    NAME = 'global-sizes'
     VARIANTS = {
         (0, 0, 0): ('SELECT datname, pg_database_size(datname) '
                     'FROM pg_database WHERE datistemplate=false'),
@@ -227,12 +263,14 @@ class GlobalSIzesQuery(MultiVersionQuery):
 
 
 class CurrentUserQuery(MultiVersionQuery):
+    NAME = 'current-users'
     VARIANTS = {
         (0, 0, 0): 'SELECT CURRENT_USER',
     },
 
 
 class LocksQuery(MultiVersionQuery):
+    NAME = 'locks'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -250,6 +288,7 @@ class LocksQuery(MultiVersionQuery):
 
 
 class QueryAgesQuery(MultiVersionQuery):
+    NAME = 'query-ages'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -275,6 +314,7 @@ class QueryAgesQuery(MultiVersionQuery):
 
 
 class DiskIOQuery(MultiVersionQuery):
+    NAME = 'disk-io'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -292,6 +332,7 @@ class DiskIOQuery(MultiVersionQuery):
 
 
 class IndexIOQuery(MultiVersionQuery):
+    NAME = 'index-io'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -304,6 +345,7 @@ class IndexIOQuery(MultiVersionQuery):
 
 
 class SequencesIOQuery(MultiVersionQuery):
+    NAME = 'sequences-io'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -316,6 +358,7 @@ class SequencesIOQuery(MultiVersionQuery):
 
 
 class ScanTypesQuery(MultiVersionQuery):
+    NAME = 'scan-types'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -328,6 +371,7 @@ class ScanTypesQuery(MultiVersionQuery):
 
 
 class RowAccessQuery(MultiVersionQuery):
+    NAME = 'rows-access'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -342,6 +386,7 @@ class RowAccessQuery(MultiVersionQuery):
 
 
 class TransactionsQuery(MultiVersionQuery):
+    NAME = 'transactions'
     VARIANTS = {
         (0, 0, 0): dedent('''\
             SELECT
@@ -353,6 +398,7 @@ class TransactionsQuery(MultiVersionQuery):
 
 
 class SizeByDBQuery(MultiVersionQuery):
+    NAME = 'size-by-db'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -375,6 +421,7 @@ class SizeByDBQuery(MultiVersionQuery):
 
 
 class TempBytesQuery(MultiVersionQuery):
+    NAME = 'temp-bytes'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
@@ -387,6 +434,7 @@ class TempBytesQuery(MultiVersionQuery):
 
 
 class ConnectionsQuery(MultiVersionQuery):
+    NAME = 'connections'
     VARIANTS = {
         (0, 0, 0): dedent(
             '''\
