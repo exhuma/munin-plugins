@@ -11,12 +11,22 @@ import pytest
 
 
 @pytest.fixture
-def mv_query():
+def pgmg():
+    '''
+    The script is a monolithic executable without a .py exension so normal
+    importing wont work and we need to use load_source.
+
+    To simplify this, we wrap it in a fixture.
+    '''
+    pgmg = load_source('pgmg', 'pg_multigraph')
+    return pgmg
+
+
+@pytest.fixture
+def mv_query(pgmg):
     '''
     Create a fake new multi-versioned query and returns the instance.
     '''
-    pgmg = load_source('pgmg', 'pg_multigraph')
-
     class FakeQuery(pgmg.MultiVersionQuery):
 
         VARIANTS = {
