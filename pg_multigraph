@@ -302,7 +302,7 @@ class CurrentUserQuery(MultiVersionQuery):
     NAME = 'current-user'
     VARIANTS = {
         (0, 0, 0): 'SELECT CURRENT_USER',
-    },
+    }
 
 
 class LocksQuery(MultiVersionQuery):
