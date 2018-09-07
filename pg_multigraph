@@ -775,24 +775,20 @@ class PostgresPlugin(object):
         self.host = host
         self.port = port
         self._dbnames = []
-        self.queries = None
+        self.db_version = (0, 0, 0)
 
     def fetch(self):
         '''
         Fetch the values of the plugin and print them to stdout.
         '''
-        if self.queries is None:
-            version_identifier = get_pg_version(self.connection)
-            self.queries = queries_for_version(QUERIES, version_identifier)
+        if self.db_version == (0, 0, 0):
+            self.db_version = get_pg_version(self.connection)
         print('multigraph %s' % self.graph_name)
 
     def config(self):
         '''
         Print the plugin configuration to stdout.
         '''
-        if self.queries is None:
-            version_identifier = get_pg_version(self.connection)
-            self.queries = queries_for_version(QUERIES, version_identifier)
         print('multigraph %s' % self.graph_name)
         print('graph_category postgresql')
         print('graph_title %s' % self.TITLE)
@@ -813,7 +809,7 @@ class PostgresPlugin(object):
         if self._dbnames:
             return self._dbnames
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['list_databases'])
+        cursor.execute(ListDatabaseQuery.get(self.db_version))
         dbnames = [row[0] for row in cursor]
         cursor.close()
         return dbnames
@@ -834,12 +830,12 @@ class Connections(PostgresPlugin):
         '''
         # Fetch the current username of the connection
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['current_user'])
+        cursor.execute(CurrentUserQuery.get(self.db_version))
         whoami = cursor.fetchone()[0]
         cursor.close()
 
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['connections'])
+        cursor.execute(ConnectionsQuery.get(self.db_version))
         output = []
         for username, idle, idle_tx, unknown, query_running, waiting in cursor:
             if username == whoami:  # Subtract our own active query
@@ -933,7 +929,7 @@ class Sizes(PostgresPlugin):
         breakdown) disk-size.
         '''
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['global_sizes'])
+        cursor.execute(GlobalSizesQuery.get(self.db_version))
         sizes = cursor.fetchall()
         cursor.close()
         return {row[0]: row[1] for row in sizes}
@@ -969,7 +965,7 @@ class Sizes(PostgresPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['size_by_db'])
+            cursor.execute(SizeByDBQuery.get(self.db_version))
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1104,7 +1100,7 @@ class Locks(PostgresPlugin):
             }
         '''
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['locks'])
+        cursor.execute(LocksQuery.get(self.db_version))
         locks = cursor.fetchall()
         cursor.close()
         output = {}
@@ -1189,7 +1185,7 @@ class QueryAges(PostgresPlugin):
         name to a :py:class:`.QueryAge` instance.
         '''
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['query_ages'])
+        cursor.execute(QueryAgesQuery.get(self.db_version))
         oldest_queries = cursor.fetchall()
         cursor.close()
         output = {}
@@ -1383,7 +1379,7 @@ class TableDiskIO(IOPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['disk_io'])
+            cursor.execute(DiskIOQuery.get(self.db_version))
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1428,7 +1424,7 @@ class IndexDiskIO(IOPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['index_io'])
+            cursor.execute(IndexIOQuery.get(self.db_version))
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1473,7 +1469,7 @@ class SequencesDiskIO(IOPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['sequences_io'])
+            cursor.execute(SequencesIOQuery.get(self.db_version))
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1519,7 +1515,7 @@ class ScanTypes(PostgresPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['scan_types'])
+            cursor.execute(ScanTypesQuery.get(self.db_version))
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1611,7 +1607,7 @@ class RowAccess(PostgresPlugin):
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['row_access'])
+            cursor.execute(RowAccessQuery.get(self.db_version))
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1678,7 +1674,7 @@ class Transactions(PostgresPlugin):
         to :py:class:`.TxStats` instances.
         '''
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['transactions'])
+        cursor.execute(TransactionsQuery.get(self.db_version))
 
         stats = cursor.fetchall()
         cursor.close()
@@ -1755,7 +1751,7 @@ class TempBytes(PostgresPlugin):
         to :py:class:`.TempBytesRow` instances.
         '''
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['temp_bytes'])
+        cursor.execute(TempBytesQuery.get(self.db_version))
 
         stats = cursor.fetchall()
         cursor.close()
