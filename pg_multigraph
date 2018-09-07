@@ -155,14 +155,14 @@ def first_element(indexable: Sequence[T]) -> T:
     return indexable[0]
 
 
-class MultiVersionQueryRegisry(ABCMeta):
+class MultiVersionQueryRegistry(ABCMeta):
     '''
     A metaclass which automatically registers each subclass by name when it is
     defined.
 
     Each subclass must define the class-attribute ``NAME``
 
-    The classes can be retrieved using ``MultiVersionQueryRegisry.get_query``.
+    The classes can be retrieved using ``MultiVersionQueryRegistry.get_query``.
     '''
 
     #: The registry of classes mapping the defined names (via NAME) to the
@@ -171,10 +171,10 @@ class MultiVersionQueryRegisry(ABCMeta):
 
     def __new__(mcs, name, bases, namespace, **kwargs):
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        if cls.NAME in MultiVersionQueryRegisry.REGISTRY:
+        if cls.NAME in MultiVersionQueryRegistry.REGISTRY:
             raise KeyError('%r has already been registered. Pleas use another '
                            'name!' % cls.NAME)
-        MultiVersionQueryRegisry.REGISTRY[cls.NAME] = cls
+        MultiVersionQueryRegistry.REGISTRY[cls.NAME] = cls
         return cls
 
     @staticmethod
@@ -182,11 +182,11 @@ class MultiVersionQueryRegisry(ABCMeta):
         '''
         Retrieves a class by defined name.
         '''
-        return MultiVersionQueryRegisry.REGISTRY[name]
+        return MultiVersionQueryRegistry.REGISTRY[name]
 
 
 
-class MultiVersionQuery(metaclass=MultiVersionQueryRegisry):
+class MultiVersionQuery(metaclass=MultiVersionQueryRegistry):
     '''
     A "wrapper" object around SQL queries which automatically adapt to the
     proper PostgreSQL version.
