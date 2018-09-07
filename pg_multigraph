@@ -219,7 +219,8 @@ class MultiVersionQuery(metaclass=MultiVersionQueryRegisry):
     #: can be used. These query variants should all return the same columns!
     VARIANTS = {}
 
-    def get(self, target_version):
+    @classmethod
+    def get(cls, target_version):
         '''
         Returns the query most appropriate for the target DB version.
 
@@ -244,7 +245,7 @@ class MultiVersionQuery(metaclass=MultiVersionQueryRegisry):
         '''
 
         last_visited = ''
-        for version, query in sorted(self.VARIANTS.items(), key=first_element):
+        for version, query in sorted(cls.VARIANTS.items(), key=first_element):
             if version == target_version:
                 return query
             if version > target_version:
