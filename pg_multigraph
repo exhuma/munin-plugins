@@ -238,9 +238,9 @@ class MultiVersionQuery(metaclass=MultiVersionQueryRegisry):
         ...
         ... q = MyQuery()
         >>> q.get((2, 1, 0))
-        {'foo': 'foo-200'}
+        'foo-200'
         >>> q.get((10, 0))
-        {'foo': 'foo-300'}
+        'foo-300'
         '''
 
         last_visited = ''
