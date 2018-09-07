@@ -22,6 +22,12 @@
 # We use multiline strings fairly ofthen in docstrings. To make the source-code
 # line up properl we escape the first newline, which causes this pylint
 # message.
+
+# pylint: disable=too-few-public-methods
+#
+# This module contains many subclasses of MultiVersionQuery. Those subclasses
+# don't need any methods and are used for query-lookups. We will accept this
+# message from pylint as a "necessary evil"
 '''
 =head1 Combined Postgres Plugin for Munin
 
@@ -109,7 +115,7 @@ import argparse
 import logging
 import re
 import sys
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 from collections import namedtuple
 from os import getenv
 from textwrap import dedent
@@ -248,6 +254,14 @@ class MultiVersionQuery(metaclass=MultiVersionQueryRegisry):
 
 
 class ListDatabaseQuery(MultiVersionQuery):
+    '''
+    This query lists the name of all databases in the cluser.
+
+    Each row contains the following columns:
+
+    *datname*
+        The name of the database
+    '''
     NAME = 'db-list'
     VARIANTS = {
         (0, 0, 0): 'SELECT datname FROM pg_database WHERE datistemplate=false'
@@ -255,6 +269,18 @@ class ListDatabaseQuery(MultiVersionQuery):
 
 
 class GlobalSizesQuery(MultiVersionQuery):
+    '''
+    This query lists the used disk-space of each database. This is the
+    combined, overall disk-space used.
+
+    Each row contains the following columns:
+
+    *datname*
+        The name of the database
+
+    *pg_database_size*
+        The occupied disk space in bytes
+    '''
     NAME = 'global-sizes'
     VARIANTS = {
         (0, 0, 0): ('SELECT datname, pg_database_size(datname) '
@@ -263,13 +289,40 @@ class GlobalSizesQuery(MultiVersionQuery):
 
 
 class CurrentUserQuery(MultiVersionQuery):
-    NAME = 'current-users'
+    '''
+    This query returns a result-set with only one row representing the
+    logged-in user.
+
+    Each row contains the following columns:
+
+    *current_user*
+        The name of the user
+    '''
+    NAME = 'current-user'
     VARIANTS = {
         (0, 0, 0): 'SELECT CURRENT_USER',
     },
 
 
 class LocksQuery(MultiVersionQuery):
+    '''
+    This query returns the currently held locks per database.
+
+    Each row contains the following columns:
+
+    *datname*
+        The name of the database
+    *mode*
+        Name of the lock mode held or desired by this process.
+    *locktype*
+        Type of the lockable object: relation, extend, page, tuple,
+        transactionid, virtualxid, object, userlock, or advisory
+    *granted*
+        The name of the database
+    *count(mode)*
+        The number of locks which exist (grouping database, mode, lock-type and
+        granted state).
+    '''
     NAME = 'locks'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -288,6 +341,18 @@ class LocksQuery(MultiVersionQuery):
 
 
 class QueryAgesQuery(MultiVersionQuery):
+    '''
+    This query returns the duration of the oldest query per database.
+
+    Each row contains the following columns:
+
+    *datname*
+        The name of the database
+    *<unnamed>*
+        The age of the query in seconds
+    *<unnamed>*
+        The age of the transaction in seconds
+    '''
     NAME = 'query-ages'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -314,6 +379,27 @@ class QueryAgesQuery(MultiVersionQuery):
 
 
 class DiskIOQuery(MultiVersionQuery):
+    '''
+    Disk IO operations over the whole database (only considering "user"
+    tables)..
+
+    Each row contains the following columns:
+
+    *heap_blks_read*
+        Number of heap blocks read from disk.
+    *heap_blks_hit*
+        Number of buffer hits.
+    *idx_blks_read*
+        Number of index blocks read from disk.
+    *idx_blks_hit*
+        Number of buffer hits for all indices.
+    *toast_blks_read*
+        Number of TOAST blocks read from disk.
+    *toast_blks_hit*
+        Number of buffer hits for all TOAST entries.
+    *tidx_blks_read*
+        Number of TOAST index blocks read from disk.
+    '''
     NAME = 'disk-io'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -332,6 +418,17 @@ class DiskIOQuery(MultiVersionQuery):
 
 
 class IndexIOQuery(MultiVersionQuery):
+    '''
+    Disk IO operations over the whole database (only considering "user"
+    indices)..
+
+    Each row contains the following columns:
+
+    *idx_blks_read*
+        Number of index blocks read from disk.
+    *idx_blks_hit*
+        Number of buffer hits for all indices.
+    '''
     NAME = 'index-io'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -345,6 +442,17 @@ class IndexIOQuery(MultiVersionQuery):
 
 
 class SequencesIOQuery(MultiVersionQuery):
+    '''
+    Disk IO operations over the whole database (only considering "user"
+    sequences).
+
+    Each row contains the following columns:
+
+    *blks_read*
+        Number of blocks read from disk.
+    *blks_hit*
+        Number of buffer hits for all sequences.
+    '''
     NAME = 'sequences-io'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -358,6 +466,16 @@ class SequencesIOQuery(MultiVersionQuery):
 
 
 class ScanTypesQuery(MultiVersionQuery):
+    '''
+    Number of index scans vs sequential scans for the whole database.
+
+    Each row contains the following columns:
+
+    *idx_scan*
+        Number of index scans
+    *seq_scan*
+        Number of sequential scans
+    '''
     NAME = 'scan-types'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -371,6 +489,20 @@ class ScanTypesQuery(MultiVersionQuery):
 
 
 class RowAccessQuery(MultiVersionQuery):
+    '''
+    Number of row accesses on the whole database.
+
+    Each row contains the following columns:
+
+    *n_tup_ins*
+        Number of inserts
+    *n_tup_upd*
+        Number of updates
+    *n_tup_del*
+        Number of deletes
+    *n_tup_hot_upd*
+        Number of HOT updates (no index change)
+    '''
     NAME = 'rows-access'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -386,6 +518,16 @@ class RowAccessQuery(MultiVersionQuery):
 
 
 class TransactionsQuery(MultiVersionQuery):
+    '''
+    Number of transactions on the database.
+
+    Each row contains the following columns:
+
+    *pg_stat_get_db_xact_commit*
+        Number of commits
+    *pg_stat_get_db_xact_rollback*
+        Number of rollbacks
+    '''
     NAME = 'transactions'
     VARIANTS = {
         (0, 0, 0): dedent('''\
@@ -398,6 +540,24 @@ class TransactionsQuery(MultiVersionQuery):
 
 
 class SizeByDBQuery(MultiVersionQuery):
+    '''
+    Disk size occupied by the database.
+
+    Each row contains the following columns:
+
+    *main_size*
+        The size of the main data in bytes
+    *vm_size*
+        The size of the visibility map in bytes
+    *fsm_size*
+        The size of the free space map in bytes
+    *toast_size*
+        The size of TOAST data in bytes
+    *index_size*
+        The size of indices in bytes
+    *database_size*
+        Total disk space occupied in bytes
+    '''
     NAME = 'size-by-db'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -421,6 +581,16 @@ class SizeByDBQuery(MultiVersionQuery):
 
 
 class TempBytesQuery(MultiVersionQuery):
+    '''
+    Disk size occupied by temporary data per database.
+
+    Each row contains the following columns:
+
+    *datname*
+        The database name
+    *temp_bytes*
+        The size of temporary storage in bytes
+    '''
     NAME = 'temp-bytes'
     VARIANTS = {
         (0, 0, 0): dedent(
@@ -434,6 +604,24 @@ class TempBytesQuery(MultiVersionQuery):
 
 
 class ConnectionsQuery(MultiVersionQuery):
+    '''
+    Number of connections by user.
+
+    Each row contains the following columns:
+
+    *usename*
+        The username
+    *idle*
+        Connections which are open but idle
+    *idle_tx*
+        Connections which are open but idle and have an open connection
+    *unknown*
+        Connections of unknown state
+    *query_running*
+        Connections which have a query actively running
+    *waiting*
+        Connections which are waiting on a lock.
+    '''
     NAME = 'connections'
     VARIANTS = {
         (0, 0, 0): dedent(
