@@ -155,38 +155,54 @@ def first_element(indexable: Sequence[T]) -> T:
     return indexable[0]
 
 
-class MultiVersionQueryRegistry(ABCMeta):
+class NamedRegistry(ABCMeta):
     '''
     A metaclass which automatically registers each subclass by name when it is
     defined.
 
     Each subclass must define the class-attribute ``NAME``
 
-    The classes can be retrieved using ``MultiVersionQueryRegistry.get_query``.
+    The classes can be retrieved using ``NamedRegistry.get_query``.
     '''
 
-    #: The registry of classes mapping the defined names (via NAME) to the
-    #: class reference
-    REGISTRY = {}  # type: Dict[str, type]
+    GLOBAL_REGISTRY = {}  # type: Dict[type, Dict[str, type]]
+    __DISCRIMINATOR = None
 
     def __new__(mcs, name, bases, namespace, **kwargs):
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        if cls.NAME in MultiVersionQueryRegistry.REGISTRY:
-            raise KeyError('%r has already been registered. Pleas use another '
-                           'name!' % cls.NAME)
-        MultiVersionQueryRegistry.REGISTRY[cls.NAME] = cls
+
+        # Without a discriminator it would not be possible to have two separete
+        # subclass trees using the registry
+        if cls.__DISCRIMINATOR is None:
+            cls.__DISCRIMINATOR = cls
+
+        # We don't want the top-level class to show up in the registry. We can
+        # use the discriminator we used earlier for that.
+        if cls.mro()[0] == cls.__DISCRIMINATOR:
+            return cls
+
+        registry = NamedRegistry.GLOBAL_REGISTRY.setdefault(cls.__DISCRIMINATOR, {})
+        if cls.NAME in registry:
+            raise KeyError(
+                'The name %r for class %r has already been registered. '
+                'Please use another name!' % (cls.NAME, cls))
+        registry[cls.NAME] = cls
         return cls
 
-    @staticmethod
-    def get_query(name: str) -> 'MultiVersionQuery':
+    def get_query(cls, name: str) -> 'MultiVersionQuery':
         '''
         Retrieves a class by defined name.
         '''
-        return MultiVersionQueryRegistry.REGISTRY[name]
+        return NamedRegistry.GLOBAL_REGISTRY[cls][name]
+
+    def all(cls) -> 'Set[NamedRegistry]':
+        '''
+        Return all registered classes under *cls*
+        '''
+        return NamedRegistry.GLOBAL_REGISTRY[cls].values()
 
 
-
-class MultiVersionQuery(metaclass=MultiVersionQueryRegistry):
+class MultiVersionQuery(metaclass=NamedRegistry):
     '''
     A "wrapper" object around SQL queries which automatically adapt to the
     proper PostgreSQL version.
