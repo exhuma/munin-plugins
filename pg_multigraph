@@ -171,6 +171,13 @@ class NamedRegistry(ABCMeta):
     def __new__(mcs, name, bases, namespace, **kwargs):
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
 
+        # We may want to skip certain classes. We can mark them by setting the
+        # class attribute SKIP_REGISTRY to True. Using the __dict__ test here
+        # avoids also skipping subclasses inadvertently.
+        skip = cls.SKIP_REGISTRY if 'SKIP_REGISTRY' in cls.__dict__ else False
+        if skip:
+            return cls
+
         # Without a discriminator it would not be possible to have two separete
         # subclass trees using the registry
         if cls.__DISCRIMINATOR is None:
