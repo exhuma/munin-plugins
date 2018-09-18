@@ -742,18 +742,6 @@ def connect(*args, **kwargs):
     return connection
 
 
-def find_subclasses(cls):
-    '''
-    Recursively resolve all subclasses of *cls* and return them as a set.
-    '''
-    output = set()
-    for subcls in cls.__subclasses__():
-        if subcls.NAME:
-            output.add(subcls)
-        output = output | find_subclasses(subcls)
-    return output
-
-
 def construct_dsn(dbname, user, password='', host='', port=0):
     '''
     Given explicit keyword arguments, this will construct a DSN-string usable
@@ -784,7 +772,7 @@ def parse_args():
     return parser.parse_args()
 
 
-class PostgresPlugin(object):
+class PostgresPlugin(metaclass=NamedRegistry):
     '''
     Base class for a PostgreSQL plugin for munin.
     '''
@@ -1269,13 +1257,14 @@ class QueryAges(PostgresPlugin):
             print(config_template)
 
 
-class IOPlugin(PostgresPlugin):
+class IOPlugin(PostgresPlugin, metaclass=ABCMeta):
     '''
     Base class for plugins giving IO information.
     '''
 
     #: A list of tuples as: (column-name, userfriendly-name, description)
     FIELDS = []
+    SKIP_REGISTRY = True
 
     def _print_values(self, values):
         for field, _, _ in self.FIELDS:
@@ -1873,7 +1862,7 @@ def main():
     selected_plugins = getenv('PG_MULTIGRAPHS', '__all__')
     selected_plugins = {name.strip() for name in selected_plugins.split(',')}
 
-    available_plugins = find_subclasses(PostgresPlugin)
+    available_plugins = PostgresPlugin.all()
     if '__all__' in selected_plugins:
         active_plugins = available_plugins
     else:
