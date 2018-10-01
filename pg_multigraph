@@ -157,9 +157,6 @@ QUERIES = {
         (0, 0, 0): ('SELECT datname, pg_database_size(datname) '
                     'FROM pg_database WHERE datistemplate=false'),
     },
-    'current_user': {
-        (0, 0, 0): 'SELECT CURRENT_USER',
-    },
     'locks': {
         (0, 0, 0): dedent(
             '''\
@@ -288,7 +285,9 @@ QUERIES = {
         (0, 0, 0): dedent(
             '''\
             WITH users AS (SELECT usename FROM pg_user),
-            conntype AS (SELECT u.usename, act.waiting,
+            conntype AS (SELECT u.usename,
+                act.pid,
+                act.waiting,
                 current_query
                 FROM users u
                 LEFT JOIN pg_stat_activity act USING (usename))
@@ -307,12 +306,15 @@ QUERIES = {
                     THEN 1 END) AS query_running,
                 COUNT(CASE WHEN waiting THEN 1 END) AS waiting
             FROM conntype
+            WHERE COALESCE(conntype.pid, 0) <> pg_backend_pid()
             GROUP BY usename
             ORDER BY usename;'''),
         (9, 2, 0): dedent(
             '''\
             WITH users AS (SELECT usename FROM pg_user),
-            conntype AS (SELECT u.usename, act.waiting,
+            conntype AS (SELECT u.usename,
+                act.pid,
+                act.waiting,
                 state,
                 query
                 FROM users u
@@ -333,12 +335,14 @@ QUERIES = {
                     THEN 1 END) AS query_running,
                 COUNT(CASE WHEN waiting THEN 1 END) AS waiting
             FROM conntype
+            WHERE COALESCE(conntype.pid, 0) <> pg_backend_pid()
             GROUP BY usename
             ORDER BY usename;'''),
         (10, 0, 0): dedent(
             '''\
             WITH users AS (SELECT usename FROM pg_user),
             conntype AS (SELECT u.usename,
+                act.pid,
                 act.wait_event_type IS NOT NULL as waiting,
                 state,
                 query
@@ -360,6 +364,7 @@ QUERIES = {
                     THEN 1 END) AS query_running,
                 COUNT(CASE WHEN waiting THEN 1 END) AS waiting
             FROM conntype
+            WHERE COALESCE(conntype.pid, 0) <> pg_backend_pid()
             GROUP BY usename
             ORDER BY usename;''')
     }
@@ -538,18 +543,10 @@ class Connections(PostgresPlugin):
         Returns a list of all open connections as
         :py:class:`.ConnectionCounter` instances.
         '''
-        # Fetch the current username of the connection
-        cursor = self.connection.cursor()
-        cursor.execute(self.queries['current_user'])
-        whoami = cursor.fetchone()[0]
-        cursor.close()
-
         cursor = self.connection.cursor()
         cursor.execute(self.queries['connections'])
         output = []
         for username, idle, idle_tx, unknown, query_running, waiting in cursor:
-            if username == whoami:  # Subtract our own active query
-                query_running = query_running - 1
             output.append(ConnectionCounter(username, idle, idle_tx, unknown,
                                             query_running, waiting))
         cursor.close()
