@@ -98,6 +98,8 @@ try:
     from psycopg2.extras import DictCursor
     PSYCOPG2_AVAILABLE = True  # used for autoconf
 except ImportError as exc:
+    if exc.name != 'psycopg2':
+        raise
     PSYCOPG2_AVAILABLE = False  # used for autoconf
 
 
