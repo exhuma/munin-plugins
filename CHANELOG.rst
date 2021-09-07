@@ -1,6 +1,12 @@
 Changelog
 =========
 
+1.2.0
+-----
+
+*added* Add support for PostgreSQL 10
+
+
 1.1.3
 -----
 
