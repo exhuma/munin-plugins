@@ -22,7 +22,7 @@
 # We use multiline strings fairly ofthen in docstrings. To make the source-code
 # line up properl we escape the first newline, which causes this pylint
 # message.
-'''
+"""
 =head1 Combined Postgres Plugin for Munin
 
 
@@ -103,7 +103,7 @@ option out will generate all graphs. The names are referenced above.
 =back
 
 =cut
-'''
+"""
 
 from __future__ import print_function
 from collections import namedtuple
@@ -117,9 +117,10 @@ import sys
 try:
     from psycopg2 import connect as _connect
     from psycopg2.extras import DictCursor
+
     PSYCOPG2_AVAILABLE = True  # used for autoconf
 except ImportError as exc:
-    if exc.name != 'psycopg2':
+    if exc.name != "psycopg2":
         raise
     PSYCOPG2_AVAILABLE = False  # used for autoconf
 
@@ -127,16 +128,16 @@ except ImportError as exc:
 LOG = logging.getLogger(__name__)
 
 
-INVALID_CHARS = re.compile(r'[^a-zA-Z0-9_]')
+INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 ConnectionCounter = namedtuple(
-    'ConnectionCounter',
-    'username idle idle_tx unknown query_running waiting')
-Lock = namedtuple('Lock', 'mode, granted')
-GraphedValue = namedtuple('GraphedValue', 'name, label, doc')
-DbHealth = namedtuple('DbHealth', 'dbname vacuum_age analyze_age')
-QueryAge = namedtuple('QueryAge', 'dbname query_age transact_age')
-TxStats = namedtuple('TxStats', 'dbname committed rolled_back')
-TempBytesRow = namedtuple('TempBytesRow', 'dbname bytes')
+    "ConnectionCounter", "username idle idle_tx unknown query_running waiting"
+)
+Lock = namedtuple("Lock", "mode, granted")
+GraphedValue = namedtuple("GraphedValue", "name, label, doc")
+DbHealth = namedtuple("DbHealth", "dbname vacuum_age analyze_age")
+QueryAge = namedtuple("QueryAge", "dbname query_age transact_age")
+TxStats = namedtuple("TxStats", "dbname committed rolled_back")
+TempBytesRow = namedtuple("TempBytesRow", "dbname bytes")
 
 
 # --- Query Definitions ------------------------------------------------------
@@ -152,16 +153,18 @@ TempBytesRow = namedtuple('TempBytesRow', 'dbname bytes')
 #  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 QUERIES = {
-    'list_databases': {
-        (0, 0, 0): 'SELECT datname FROM pg_database WHERE datistemplate=false'
+    "list_databases": {
+        (0, 0, 0): "SELECT datname FROM pg_database WHERE datistemplate=false"
     },
-    'global_sizes': {
-        (0, 0, 0): ('SELECT datname, pg_database_size(datname) '
-                    'FROM pg_database WHERE datistemplate=false'),
+    "global_sizes": {
+        (0, 0, 0): (
+            "SELECT datname, pg_database_size(datname) "
+            "FROM pg_database WHERE datistemplate=false"
+        ),
     },
-    'locks': {
+    "locks": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 db.datname,
                 LOWER(mode),
@@ -171,11 +174,12 @@ QUERIES = {
             FROM pg_database db
             FULL OUTER JOIN pg_locks lck ON (db.oid=lck.database)
             GROUP BY db.datname, mode, locktype, granted;
-            ''')
+            """
+        )
     },
-    'query_ages': {
+    "query_ages": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 datname,
                 COALESCE(MAX(extract(EPOCH FROM NOW() - query_start)), 0),
@@ -183,9 +187,10 @@ QUERIES = {
             FROM pg_stat_activity
             WHERE current_query NOT LIKE '<IDLE%'
             GROUP BY datname
-            '''),
+            """
+        ),
         (9, 2, 0): dedent(
-            '''\
+            """\
             SELECT
                 datname,
                 COALESCE(MAX(extract(EPOCH FROM NOW() - query_start)), 0),
@@ -193,11 +198,12 @@ QUERIES = {
             FROM pg_stat_activity
             WHERE state NOT LIKE '%idle%'
             GROUP BY datname
-            ''')
+            """
+        ),
     },
-    'disk_io': {
+    "disk_io": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 SUM(heap_blks_read) AS heap_blks_read,
                 SUM(heap_blks_hit) AS heap_blks_hit,
@@ -207,57 +213,64 @@ QUERIES = {
                 SUM(toast_blks_hit) AS toast_blks_hit,
                 SUM(tidx_blks_read) AS tidx_blks_read
             FROM pg_statio_user_tables;
-            ''')
+            """
+        )
     },
-    'index_io': {
+    "index_io": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 SUM(idx_blks_read) AS idx_blks_read,
                 SUM(idx_blks_hit) AS idx_blks_hit
             FROM pg_statio_user_indexes;
-            ''')
+            """
+        )
     },
-    'sequences_io': {
+    "sequences_io": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 SUM(blks_read) AS blks_read,
                 SUM(blks_hit) AS blks_hit
             FROM pg_statio_user_sequences;
-            ''')
+            """
+        )
     },
-    'scan_types': {
+    "scan_types": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 SUM(idx_scan) AS idx_scan,
                 SUM(seq_scan) AS seq_scan
             FROM pg_stat_user_tables;
-            ''')
+            """
+        )
     },
-    'row_access': {
+    "row_access": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 SUM(n_tup_ins) AS n_tup_ins,
                 SUM(n_tup_upd) AS n_tup_upd,
                 SUM(n_tup_del) AS n_tup_del,
                 SUM(n_tup_hot_upd) AS n_tup_hot_upd
             FROM pg_stat_user_tables;
-            ''')
+            """
+        )
     },
-    'transactions': {
-        (0, 0, 0): dedent('''\
+    "transactions": {
+        (0, 0, 0): dedent(
+            """\
             SELECT
                 datname,
                 pg_stat_get_db_xact_commit(oid),
                 pg_stat_get_db_xact_rollback(oid)
-            FROM pg_database''')
+            FROM pg_database"""
+        )
     },
-    'size_by_db': {
+    "size_by_db": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 SUM(pg_relation_size(oid, 'main')) AS main_size,
                 SUM(pg_relation_size(oid, 'vm')) AS vm_size,
@@ -272,20 +285,22 @@ QUERIES = {
                 pg_database_size(current_database()) AS database_size
                 FROM pg_class
                 WHERE relkind not in ('t', 'i')
-                AND NOT relisshared''')
+                AND NOT relisshared"""
+        )
     },
-    'temp_bytes': {
+    "temp_bytes": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             SELECT
                 datname,
                 temp_bytes
             FROM
-                pg_stat_database''')
+                pg_stat_database"""
+        )
     },
-    'connections': {
+    "connections": {
         (0, 0, 0): dedent(
-            '''\
+            """\
             WITH users AS (SELECT usename FROM pg_user),
             conntype AS (SELECT u.usename,
                 act.pid,
@@ -310,9 +325,10 @@ QUERIES = {
             FROM conntype
             WHERE COALESCE(conntype.pid, 0) <> pg_backend_pid()
             GROUP BY usename
-            ORDER BY usename;'''),
+            ORDER BY usename;"""
+        ),
         (9, 2, 0): dedent(
-            '''\
+            """\
             WITH users AS (SELECT usename FROM pg_user),
             conntype AS (SELECT u.usename,
                 act.pid,
@@ -339,9 +355,10 @@ QUERIES = {
             FROM conntype
             WHERE COALESCE(conntype.pid, 0) <> pg_backend_pid()
             GROUP BY usename
-            ORDER BY usename;'''),
+            ORDER BY usename;"""
+        ),
         (10, 0, 0): dedent(
-            '''\
+            """\
             WITH users AS (SELECT usename FROM pg_user),
             conntype AS (SELECT u.usename,
                 act.pid,
@@ -368,38 +385,39 @@ QUERIES = {
             FROM conntype
             WHERE COALESCE(conntype.pid, 0) <> pg_backend_pid()
             GROUP BY usename
-            ORDER BY usename;''')
-    }
+            ORDER BY usename;"""
+        ),
+    },
 }
 
 # ----------------------------------------------------------------------------
 
 
 def connect(*args, **kwargs):
-    '''
+    """
     Create a psycopg2 connection with autocommit ON.
 
     This solves issues with calculations with ``NOW()``
-    '''
+    """
     connection = _connect(*args, **kwargs)
     connection.autocommit = True
     return connection
 
 
 def find_subclasses(cls):
-    '''
+    """
     Recursively resolve all subclasses of *cls* and return them as a set.
-    '''
+    """
     output = set()
     for subcls in cls.__subclasses__():
-        if hasattr(subcls, 'NAME'):
+        if hasattr(subcls, "NAME"):
             output.add(subcls)
         output = output | find_subclasses(subcls)
     return output
 
 
 def queries_for_version(queries, target_version):
-    '''
+    """
     Reduces the data in *queries* to the best possible version.
 
     The expected structure of *queries* is::
@@ -434,7 +452,7 @@ def queries_for_version(queries, target_version):
     ... }
     >>> queries_for_version(queries, (2, 1, 0))
     {'foo': 'foo-200'}
-    '''
+    """
 
     output = {}
     for query_name, variants in queries.items():
@@ -444,42 +462,40 @@ def queries_for_version(queries, target_version):
     return output
 
 
-def construct_dsn(dbname, user, password='', host='', port=0):
-    '''
+def construct_dsn(dbname, user, password="", host="", port=0):
+    """
     Given explicit keyword arguments, this will construct a DSN-string usable
     in the *connect* method.
-    '''
-    elements = [
-        'dbname=%s' % dbname,
-        'user=%s' % user
-    ]
+    """
+    elements = ["dbname=%s" % dbname, "user=%s" % user]
     if password:
-        elements.append('password=%s' % password)
+        elements.append("password=%s" % password)
     if host:
-        elements.append('host=%s' % host)
+        elements.append("host=%s" % host)
     if port:
-        elements.append('port=%d' % port)
+        elements.append("port=%d" % port)
 
-    return ' '.join(elements)
+    return " ".join(elements)
 
 
 def parse_args():
-    '''
+    """
     Parses CLI arguments and returns an :py:class:`argparse.Namespace` object.
-    '''
+    """
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', nargs='?',
-                        help='The munin action to perform',
-                        default='fetch')
+    parser.add_argument(
+        "action", nargs="?", help="The munin action to perform", default="fetch"
+    )
     return parser.parse_args()
 
 
 class PostgresPlugin(object):
-    '''
+    """
     Base class for a PostgreSQL plugin for munin.
-    '''
-    TITLE = 'unknown plugin'
-    NAME = 'unknown plugin'
+    """
+
+    TITLE = "unknown plugin"
+    NAME = "unknown plugin"
 
     def __init__(self, connection, user, password, host, port):
         self.connection = connection
@@ -491,66 +507,69 @@ class PostgresPlugin(object):
         self.queries = None
 
     def fetch(self):
-        '''
+        """
         Fetch the values of the plugin and print them to stdout.
-        '''
+        """
         if self.queries is None:
             version_identifier = get_pg_version(self.connection)
             self.queries = queries_for_version(QUERIES, version_identifier)
-        print('multigraph %s' % self.graph_name)
+        print("multigraph %s" % self.graph_name)
 
     def config(self):
-        '''
+        """
         Print the plugin configuration to stdout.
-        '''
+        """
         if self.queries is None:
             version_identifier = get_pg_version(self.connection)
             self.queries = queries_for_version(QUERIES, version_identifier)
-        print('multigraph %s' % self.graph_name)
-        print('graph_category postgresql')
-        print('graph_title %s' % self.TITLE)
+        print("multigraph %s" % self.graph_name)
+        print("graph_category postgresql")
+        print("graph_title %s" % self.TITLE)
 
     @property
     def graph_name(self):
-        '''
+        """
         Returns the graph-name for multigraphs
-        '''
-        return 'pgmg_%s' % self.NAME
+        """
+        return "pgmg_%s" % self.NAME
 
     @property
     def all_databases(self):
-        '''
+        """
         Returns a list of all databases. The list is cached during the
         execution of this script.
-        '''
+        """
         if self._dbnames:
             return self._dbnames
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['list_databases'])
+        cursor.execute(self.queries["list_databases"])
         dbnames = [row[0] for row in cursor]
         cursor.close()
         return dbnames
 
 
 class Connections(PostgresPlugin):
-    '''
+    """
     A plugin that shows details of database connections.
-    '''
+    """
 
-    NAME = 'connections'
-    TITLE = 'Connections'
+    NAME = "connections"
+    TITLE = "Connections"
 
     def all_connections(self):
-        '''
+        """
         Returns a list of all open connections as
         :py:class:`.ConnectionCounter` instances.
-        '''
+        """
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['connections'])
+        cursor.execute(self.queries["connections"])
         output = []
         for username, idle, idle_tx, unknown, query_running, waiting in cursor:
-            output.append(ConnectionCounter(username, idle, idle_tx, unknown,
-                                            query_running, waiting))
+            output.append(
+                ConnectionCounter(
+                    username, idle, idle_tx, unknown, query_running, waiting
+                )
+            )
         cursor.close()
         return output
 
@@ -558,36 +577,37 @@ class Connections(PostgresPlugin):
         super(Connections, self).fetch()
         conns = self.all_connections()
         sums = {
-            'idle': sum([conn.idle for conn in conns]),
-            'idle_transaction': sum([conn.idle_tx for conn in conns]),
-            'unknown': sum([conn.unknown for conn in conns]),
-            'query_running': sum([conn.query_running for conn in conns]),
-            'waiting': sum([conn.waiting for conn in conns]),
+            "idle": sum([conn.idle for conn in conns]),
+            "idle_transaction": sum([conn.idle_tx for conn in conns]),
+            "unknown": sum([conn.unknown for conn in conns]),
+            "query_running": sum([conn.query_running for conn in conns]),
+            "waiting": sum([conn.waiting for conn in conns]),
         }
 
-        print('idle.value %d' % sums['idle'])
-        print('idle_transaction.value %d' % sums['idle_transaction'])
-        print('unknown.value %d' % sums['unknown'])
-        print('query_running.value %d' % sums['query_running'])
-        print('waiting.value %d' % sums['waiting'])
+        print("idle.value %d" % sums["idle"])
+        print("idle_transaction.value %d" % sums["idle_transaction"])
+        print("unknown.value %d" % sums["unknown"])
+        print("query_running.value %d" % sums["query_running"])
+        print("waiting.value %d" % sums["waiting"])
 
         # print values for the each subgraph
         for subgraph in conns:
-            print('multigraph %s.%s' % (
-                self.graph_name,
-                INVALID_CHARS.sub('_', subgraph.username)))
-            print('idle.value %d' % subgraph.idle)
-            print('idle_transaction.value %d' % subgraph.idle_tx)
-            print('unknown.value %d' % subgraph.unknown)
-            print('query_running.value %d' % subgraph.query_running)
-            print('waiting.value %d' % subgraph.waiting)
+            print(
+                "multigraph %s.%s"
+                % (self.graph_name, INVALID_CHARS.sub("_", subgraph.username))
+            )
+            print("idle.value %d" % subgraph.idle)
+            print("idle_transaction.value %d" % subgraph.idle_tx)
+            print("unknown.value %d" % subgraph.unknown)
+            print("query_running.value %d" % subgraph.query_running)
+            print("waiting.value %d" % subgraph.waiting)
 
     def config(self):
         super(Connections, self).config()
         # We want the main and subgraph to use the same config. So we store it
         # as a variable.
         common_config_block = dedent(
-            '''\
+            """\
             graph_args --base 1000
             graph_vlabel Active Connections
             graph_order waiting query_running idle idle_transaction unknown
@@ -608,43 +628,45 @@ class Connections(PostgresPlugin):
             unknown.label unknown
             unknown.info Connections where munin did not have the access rights to get more details.
             unknown.draw STACK
-            ''')
+            """
+        )
 
         conns = self.all_connections()
 
-        print('graph_info Shows an overview of connections and their type on '
-              'the PostgreSQL cluster.')
+        print(
+            "graph_info Shows an overview of connections and their type on "
+            "the PostgreSQL cluster."
+        )
 
         print(common_config_block)
         for subgraph in conns:
-            clean_username = INVALID_CHARS.sub('_', subgraph.username)
-            print('multigraph %s.%s' % (self.graph_name, clean_username))
-            print('graph_title %s for user %s' % (
-                self.TITLE, subgraph.username))
+            clean_username = INVALID_CHARS.sub("_", subgraph.username)
+            print("multigraph %s.%s" % (self.graph_name, clean_username))
+            print("graph_title %s for user %s" % (self.TITLE, subgraph.username))
             print(common_config_block)
 
 
 class Sizes(PostgresPlugin):
-    '''
+    """
     Returns the disk-sizes for each databse.
-    '''
+    """
 
-    NAME = 'sizes'
-    TITLE = 'Database Sizes'
+    NAME = "sizes"
+    TITLE = "Database Sizes"
 
     def global_stats(self):
-        '''
+        """
         Returns a dictionary mapping the database name to its overall (no
         breakdown) disk-size.
-        '''
+        """
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['global_sizes'])
+        cursor.execute(self.queries["global_sizes"])
         sizes = cursor.fetchall()
         cursor.close()
         return {row[0]: row[1] for row in sizes}
 
     def breakdown(self):
-        '''
+        """
         given a specific DB, get detailed values. It will be broken down into:
 
         - main data size
@@ -652,8 +674,7 @@ class Sizes(PostgresPlugin):
         - free-space-map size
         - toast size
         - index size
-        '''
-
+        """
 
         # we need to get stats for each DB. We need to create new connections
         # for each.
@@ -664,17 +685,16 @@ class Sizes(PostgresPlugin):
         for dbname in dbnames:
             try:
                 localcon = connect(
-                    construct_dsn(dbname,
-                                  self.user,
-                                  self.password,
-                                  self.host,
-                                  self.port))
+                    construct_dsn(
+                        dbname, self.user, self.password, self.host, self.port
+                    )
+                )
             except Exception as exc:
                 LOG.error(exc)
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['size_by_db'])
+            cursor.execute(self.queries["size_by_db"])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -686,43 +706,51 @@ class Sizes(PostgresPlugin):
         breakdown = self.breakdown()
 
         for dbname, value in stats.items():
-            print('%s.value %s' % (INVALID_CHARS.sub('_', dbname), value))
+            print("%s.value %s" % (INVALID_CHARS.sub("_", dbname), value))
 
         for dbname, value in breakdown.items():
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('main.value %s' % value['main_size'])
-            print('vm.value %s' % value['vm_size'])
-            print('fsm.value %s' % value['fsm_size'])
-            print('toast.value %s' % value['toast_size'])
-            print('indexes.value %s' % value['indexes_size'])
-            print('size.value %s' % value['database_size'])
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("main.value %s" % value["main_size"])
+            print("vm.value %s" % value["vm_size"])
+            print("fsm.value %s" % value["fsm_size"])
+            print("toast.value %s" % value["toast_size"])
+            print("indexes.value %s" % value["indexes_size"])
+            print("size.value %s" % value["database_size"])
 
     def config(self):
         super(Sizes, self).config()
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             graph_args --base 1024 --lower-limit 0
             graph_vlabel Size (bytes)
-            '''))
+            """
+            )
+        )
 
         first_graph = True
         all_dbs = self.all_databases
         for dbname in all_dbs:
-            print(dedent(
-                '''\
+            print(
+                dedent(
+                    """\
                 {clean_name}.info Size in Bytes for database {clean_name}
                 {clean_name}.label {raw_name}
                 {clean_name}.info Total disk size occupied by this DB. This includes all DB objects.
                 {clean_name}.draw {style}
                 {clean_name}.min 0
-                '''.format(raw_name=dbname,
-                           clean_name=INVALID_CHARS.sub('_', dbname),
-                           style='AREA' if first_graph else 'STACK')))
+                """.format(
+                        raw_name=dbname,
+                        clean_name=INVALID_CHARS.sub("_", dbname),
+                        style="AREA" if first_graph else "STACK",
+                    )
+                )
+            )
             first_graph = False
 
         # Scale each graph relative to the biggest DB
         template = dedent(
-            '''\
+            """\
             multigraph {graph_name}.{dbname}
             graph_title {title} for {dbname}
             graph_args --base 1024 --lower-limit 0
@@ -750,37 +778,71 @@ class Sizes(PostgresPlugin):
             size.min 0
             size.draw LINE1
             size.info Size of the DB folder on disk (may contain additional files so the size may be larger).
-            ''')
+            """
+        )
         for dbname in all_dbs:
-            print(template.format(title=self.TITLE,
-                                  graph_name=self.graph_name,
-                                  dbname=dbname))
+            print(
+                template.format(
+                    title=self.TITLE, graph_name=self.graph_name, dbname=dbname
+                )
+            )
 
 
 class Locks(PostgresPlugin):
-    '''
+    """
     Retrieve statistics for existing locks on the database.
-    '''
+    """
 
-    NAME = 'locks'
-    TITLE = 'Locks'
+    NAME = "locks"
+    TITLE = "Locks"
 
     ACCEPTED_LOCK_NAMES = {
-        GraphedValue('accesssharelock', 'Access share', 'The SELECT command acquires a lock of this mode on referenced tables. In general, any query that only reads a table and does not modify it will acquire this lock mode.'),
-        GraphedValue('rowsharelock', 'Row share', 'The SELECT FOR UPDATE and SELECT FOR SHARE commands acquire a lock of this mode on the target table(s) (in addition to ACCESS SHARE locks on any other tables that are referenced but not selected FOR UPDATE/FOR SHARE).'),
-        GraphedValue('rowexclusivelock', 'Row excl.', 'The commands UPDATE, DELETE, and INSERT acquire this lock mode on the target table (in addition to ACCESS SHARE locks on any other referenced tables). In general, this lock mode will be acquired by any command that modifies data in a table.'),
-        GraphedValue('shareupdateexclusivelock', 'Share upd. excl.', 'Acquired by VACUUM (without FULL), ANALYZE, CREATE INDEX CONCURRENTLY, and some forms of ALTER TABLE.'),
-        GraphedValue('sharelock', 'Share', 'Acquired by CREATE INDEX (without CONCURRENTLY).'),
-        GraphedValue('sharerowexclusivelock', 'Share row excl.', 'This lock mode is not automatically acquired by any PostgreSQL command.'),
-        GraphedValue('exclusivelock', 'Exclusive', 'This lock mode is not automatically acquired on tables by any PostgreSQL command.'),
-        GraphedValue('accessexclusivelock', 'Access excl.', 'Acquired by the ALTER TABLE, DROP TABLE, TRUNCATE, REINDEX, CLUSTER, and VACUUM FULL commands. This is also the default lock mode for LOCK TABLE statements that do not specify a mode explicitly.'),
+        GraphedValue(
+            "accesssharelock",
+            "Access share",
+            "The SELECT command acquires a lock of this mode on referenced tables. In general, any query that only reads a table and does not modify it will acquire this lock mode.",
+        ),
+        GraphedValue(
+            "rowsharelock",
+            "Row share",
+            "The SELECT FOR UPDATE and SELECT FOR SHARE commands acquire a lock of this mode on the target table(s) (in addition to ACCESS SHARE locks on any other tables that are referenced but not selected FOR UPDATE/FOR SHARE).",
+        ),
+        GraphedValue(
+            "rowexclusivelock",
+            "Row excl.",
+            "The commands UPDATE, DELETE, and INSERT acquire this lock mode on the target table (in addition to ACCESS SHARE locks on any other referenced tables). In general, this lock mode will be acquired by any command that modifies data in a table.",
+        ),
+        GraphedValue(
+            "shareupdateexclusivelock",
+            "Share upd. excl.",
+            "Acquired by VACUUM (without FULL), ANALYZE, CREATE INDEX CONCURRENTLY, and some forms of ALTER TABLE.",
+        ),
+        GraphedValue(
+            "sharelock", "Share", "Acquired by CREATE INDEX (without CONCURRENTLY)."
+        ),
+        GraphedValue(
+            "sharerowexclusivelock",
+            "Share row excl.",
+            "This lock mode is not automatically acquired by any PostgreSQL command.",
+        ),
+        GraphedValue(
+            "exclusivelock",
+            "Exclusive",
+            "This lock mode is not automatically acquired on tables by any PostgreSQL command.",
+        ),
+        GraphedValue(
+            "accessexclusivelock",
+            "Access excl.",
+            "Acquired by the ALTER TABLE, DROP TABLE, TRUNCATE, REINDEX, CLUSTER, and VACUUM FULL commands. This is also the default lock mode for LOCK TABLE statements that do not specify a mode explicitly.",
+        ),
     }
 
     def _graph_config(self):
         first_graph = True
         for lock_info in sorted(self.ACCEPTED_LOCK_NAMES):
-            print(dedent(
-                '''\
+            print(
+                dedent(
+                    """\
                 {lock.name}_waiting.label {lock.label}
                 {lock.name}_waiting.info {lock.doc}
                 {lock.name}_waiting.draw {style}
@@ -791,12 +853,16 @@ class Locks(PostgresPlugin):
                 {lock.name}_granted.draw {style}
                 {lock.name}_granted.min 0
                 {lock.name}_granted.negative {lock.name}_waiting
-                '''.format(lock=lock_info,
-                           style='AREA' if first_graph else 'STACK',)))
+                """.format(
+                        lock=lock_info,
+                        style="AREA" if first_graph else "STACK",
+                    )
+                )
+            )
             first_graph = False
 
     def get_stats(self):
-        '''
+        """
         Fetches the statistics and returns them as dictionary mapping the
         database name to another dictionary mapping :py:class:`Lock` objects to
         their respective counts. Example output::
@@ -807,16 +873,16 @@ class Locks(PostgresPlugin):
                     Lock('ExclusiveLock', False): 1
                 }
             }
-        '''
+        """
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['locks'])
+        cursor.execute(self.queries["locks"])
         locks = cursor.fetchall()
         cursor.close()
         output = {}
         for dbname, lockmode, unused_locktype, granted, count in locks:
             if dbname is None:
                 # locks without related DB, are "global" locks
-                dbname = '__pg__database__'
+                dbname = "__pg__database__"
 
             dblocks = output.setdefault(dbname, {})
             dblocks[Lock(lockmode, granted)] = count
@@ -846,55 +912,63 @@ class Locks(PostgresPlugin):
                 sums[waiting_lock] = waiting_value
 
         for lock, value in sums.items():
-            print('%s_%s.value %s' % (lock.mode,
-                                      'granted' if lock.granted else 'waiting',
-                                      value))
+            print(
+                "%s_%s.value %s"
+                % (lock.mode, "granted" if lock.granted else "waiting", value)
+            )
 
         for dbname, values in sorted(stats.items()):
-            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
             for lock_info in self.ACCEPTED_LOCK_NAMES:
                 granted_lock = Lock(lock_info.name, True)
                 waiting_lock = Lock(lock_info.name, False)
-                print('%s_granted.value %d' % (lock_info.name,
-                                               values.get(granted_lock, 0)))
-                print('%s_waiting.value %d' % (lock_info.name,
-                                               values.get(waiting_lock, 0)))
+                print(
+                    "%s_granted.value %d"
+                    % (lock_info.name, values.get(granted_lock, 0))
+                )
+                print(
+                    "%s_waiting.value %d"
+                    % (lock_info.name, values.get(waiting_lock, 0))
+                )
 
     def config(self):
         super(Locks, self).config()
         stats = self.get_stats()
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             graph_args --base 1000
             graph_vlabel locks: granted(+) / waiting(-)
             graph_printf %3.0lf
             graph_scale no
-            '''))
+            """
+            )
+        )
 
         self._graph_config()
 
         for dbname, _ in stats.items():
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('graph_title %s for %s' % (self.TITLE, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("graph_title %s for %s" % (self.TITLE, dbname))
             self._graph_config()
 
 
 class QueryAges(PostgresPlugin):
-    '''
+    """
     This plugin will return all running queries with their respective age in
     seconds.
-    '''
+    """
 
-    NAME = 'query_ages'
-    TITLE = 'Query Ages (seconds)'
+    NAME = "query_ages"
+    TITLE = "Query Ages (seconds)"
 
     def get_stats(self):
-        '''
+        """
         Retrieve the statistics and return a dictionary mapping the database
         name to a :py:class:`.QueryAge` instance.
-        '''
+        """
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['query_ages'])
+        cursor.execute(self.queries["query_ages"])
         oldest_queries = cursor.fetchall()
         cursor.close()
         output = {}
@@ -920,19 +994,19 @@ class QueryAges(PostgresPlugin):
         for row in stats.values():
             max_age = max(max_age, row.query_age)
             max_tx_age = max(max_tx_age, row.transact_age)
-        print('age.value %f' % max_age)
-        print('tx_age.value %f' % max_tx_age)
+        print("age.value %f" % max_age)
+        print("tx_age.value %f" % max_tx_age)
 
         for dbname, value in sorted(stats.items()):
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('age.value %f' % value.query_age)
-            print('tx_age.value %f' % value.transact_age)
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("age.value %f" % value.query_age)
+            print("tx_age.value %f" % value.transact_age)
 
     def config(self):
         super(QueryAges, self).config()
         stats = self.get_stats()
         config_template = dedent(
-            '''\
+            """\
             graph_args --base 1000
             graph_vlabel Query Age (seconds)
             graph_printf %3.2lf
@@ -946,26 +1020,27 @@ class QueryAges(PostgresPlugin):
             tx_age.min 0
             tx_age.warning 3600
             tx_age.critical 43200
-            ''')
+            """
+        )
         print(config_template)
 
         for dbname, _ in stats.items():
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('graph_title %s for %s' % (self.TITLE, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("graph_title %s for %s" % (self.TITLE, dbname))
             print(config_template)
 
 
 class IOPlugin(PostgresPlugin):
-    '''
+    """
     Base class for plugins giving IO information.
-    '''
+    """
 
     #: A list of tuples as: (column-name, userfriendly-name, description)
     FIELDS = []
 
     def _print_values(self, values):
         for field, _, _ in self.FIELDS:
-            print('%s.value %s' % (field, values.get(field, 0) or 0))
+            print("%s.value %s" % (field, values.get(field, 0) or 0))
 
     def _graph_config(self):
         # given the linear list, we need to combine them as pairs so we can
@@ -976,28 +1051,28 @@ class IOPlugin(PostgresPlugin):
         for read, hit in field_pairs:
             read_name, read_label, _ = read
             hit_name, hit_label, hit_info = hit
-            stack_type = 'AREA' if first_graph else 'STACK'
+            stack_type = "AREA" if first_graph else "STACK"
 
-            print('%s.label %s' % (read_name, read_label))
-            print('%s.info %s' % (read_name, hit_info))
-            print('%s.min 0' % read_name)
-            print('%s.type DERIVE' % read_name)
-            print('%s.graph no' % read_name)
-            print('%s.draw %s' % (read_name, stack_type))
+            print("%s.label %s" % (read_name, read_label))
+            print("%s.info %s" % (read_name, hit_info))
+            print("%s.min 0" % read_name)
+            print("%s.type DERIVE" % read_name)
+            print("%s.graph no" % read_name)
+            print("%s.draw %s" % (read_name, stack_type))
 
-            print('%s.label %s' % (hit_name, hit_label))
-            print('%s.info %s' % (hit_name, hit_info))
-            print('%s.min 0' % hit_name)
-            print('%s.type DERIVE' % hit_name)
-            print('%s.negative %s' % (hit_name, read_name))
-            print('%s.draw %s' % (hit_name, stack_type))
+            print("%s.label %s" % (hit_name, hit_label))
+            print("%s.info %s" % (hit_name, hit_info))
+            print("%s.min 0" % hit_name)
+            print("%s.type DERIVE" % hit_name)
+            print("%s.negative %s" % (hit_name, read_name))
+            print("%s.draw %s" % (hit_name, stack_type))
             first_graph = False
 
     def get_stats(self):
-        '''
+        """
         Fetches the statistics. Must be overridden in concrete implementations.
-        '''
-        raise NotImplementedError('Not yet implemented')
+        """
+        raise NotImplementedError("Not yet implemented")
 
     def fetch(self):
         super(IOPlugin, self).fetch()
@@ -1012,61 +1087,64 @@ class IOPlugin(PostgresPlugin):
         self._print_values(sums)
 
         for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
             self._print_values(stats.get(dbname, {}))
 
     def config(self):
         super(IOPlugin, self).config()
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             graph_args --base 1000
             graph_vlabel blocks unbuffered (-) / buffered (+)
             graph_printf %3.0lf
             graph_scale no
-            '''))
+            """
+            )
+        )
         self._graph_config()
 
         for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('graph_title %s for %s' % (self.TITLE, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("graph_title %s for %s" % (self.TITLE, dbname))
             self._graph_config()
 
 
 class TableDiskIO(IOPlugin):
-    '''
+    """
     Plugin to fetch disk I/O data per table.
-    '''
+    """
 
-    NAME = 'tableio'
-    TITLE = 'Disk/Buffer IOs (User Tables)'
+    NAME = "tableio"
+    TITLE = "Disk/Buffer IOs (User Tables)"
 
     # Fields are processed as read/hit pairs. They need to follow this sequence
     # in this list!
     FIELDS = [
-        ('heap_blks_read',
-         'Heap blocks',
-         ''),
-        ('heap_blks_hit',
-         'Heap blocks',
-         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
-        ('idx_blks_read',
-         'Index blocks',
-         ''),
-        ('idx_blks_hit',
-         'Index blocks',
-         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
-        ('toast_blks_read',
-         'TOAST blocks',
-         ''),
-        ('toast_blks_hit',
-         'TOAST blocks',
-         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
-        ('tidx_blks_read',
-         'TOAST index blocks',
-         ''),
-        ('tidx_blks_hit',
-         'TOAST index blocks',
-         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
+        ("heap_blks_read", "Heap blocks", ""),
+        (
+            "heap_blks_hit",
+            "Heap blocks",
+            "Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!",
+        ),
+        ("idx_blks_read", "Index blocks", ""),
+        (
+            "idx_blks_hit",
+            "Index blocks",
+            "Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!",
+        ),
+        ("toast_blks_read", "TOAST blocks", ""),
+        (
+            "toast_blks_hit",
+            "TOAST blocks",
+            "Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!",
+        ),
+        ("tidx_blks_read", "TOAST index blocks", ""),
+        (
+            "tidx_blks_hit",
+            "TOAST index blocks",
+            "Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!",
+        ),
     ]
 
     def get_stats(self):
@@ -1078,17 +1156,16 @@ class TableDiskIO(IOPlugin):
         for dbname in dbnames:
             try:
                 localcon = connect(
-                    construct_dsn(dbname,
-                                  self.user,
-                                  self.password,
-                                  self.host,
-                                  self.port))
+                    construct_dsn(
+                        dbname, self.user, self.password, self.host, self.port
+                    )
+                )
             except Exception as exc:
                 LOG.error(exc)
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['disk_io'])
+            cursor.execute(self.queries["disk_io"])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1096,22 +1173,22 @@ class TableDiskIO(IOPlugin):
 
 
 class IndexDiskIO(IOPlugin):
-    '''
+    """
     Plugin to fetch disk I/O operations per database-index.
-    '''
+    """
 
-    NAME = 'indexio'
-    TITLE = 'Disk/Buffer IOs (Indices)'
+    NAME = "indexio"
+    TITLE = "Disk/Buffer IOs (Indices)"
 
     # Fields are processed as read/hit pairs. They need to follow this sequence
     # in this list!
     FIELDS = [
-        ('idx_blks_read',
-         'Index blocks',
-         ''),
-        ('idx_blks_hit',
-         'Index blocks',
-         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
+        ("idx_blks_read", "Index blocks", ""),
+        (
+            "idx_blks_hit",
+            "Index blocks",
+            "Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!",
+        ),
     ]
 
     def get_stats(self):
@@ -1123,17 +1200,16 @@ class IndexDiskIO(IOPlugin):
         for dbname in dbnames:
             try:
                 localcon = connect(
-                    construct_dsn(dbname,
-                                  self.user,
-                                  self.password,
-                                  self.host,
-                                  self.port))
+                    construct_dsn(
+                        dbname, self.user, self.password, self.host, self.port
+                    )
+                )
             except Exception as exc:
                 LOG.error(exc)
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['index_io'])
+            cursor.execute(self.queries["index_io"])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1141,22 +1217,22 @@ class IndexDiskIO(IOPlugin):
 
 
 class SequencesDiskIO(IOPlugin):
-    '''
+    """
     Plugin to fetch disk I/O operations per database-sequence.
-    '''
+    """
 
-    NAME = 'sequenceio'
-    TITLE = 'Disk/Buffer IOs (Sequences)'
+    NAME = "sequenceio"
+    TITLE = "Disk/Buffer IOs (Sequences)"
 
     # Fields are processed as read/hit pairs. They need to follow this sequence
     # in this list!
     FIELDS = [
-        ('blks_read',
-         'Sequence blocks',
-         ''),
-        ('blks_hit',
-         'Sequence blocks',
-         'Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!'),
+        ("blks_read", "Sequence blocks", ""),
+        (
+            "blks_hit",
+            "Sequence blocks",
+            "Negative values are direct PG buffer hits. Positive values go out to OS kernel for physical disk reads. This can still be cached by the kernel though and not require physical reads!",
+        ),
     ]
 
     def get_stats(self):
@@ -1168,17 +1244,16 @@ class SequencesDiskIO(IOPlugin):
         for dbname in dbnames:
             try:
                 localcon = connect(
-                    construct_dsn(dbname,
-                                  self.user,
-                                  self.password,
-                                  self.host,
-                                  self.port))
+                    construct_dsn(
+                        dbname, self.user, self.password, self.host, self.port
+                    )
+                )
             except Exception as exc:
                 LOG.error(exc)
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['sequences_io'])
+            cursor.execute(self.queries["sequences_io"])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1186,26 +1261,28 @@ class SequencesDiskIO(IOPlugin):
 
 
 class ScanTypes(PostgresPlugin):
-    '''
+    """
     Plugin to fetch the number of different scans performed on the database.
-    '''
+    """
 
-    NAME = 'scantypes'
-    TITLE = 'Scan Types'
+    NAME = "scantypes"
+    TITLE = "Scan Types"
     FIELDS = [
-        ('idx_scan', 'Index scans',
-         'Number of index scans initiated on this table'),
-        ('seq_scan', 'Sequential scans',
-         'Number of sequential scans initiated on this table'),
+        ("idx_scan", "Index scans", "Number of index scans initiated on this table"),
+        (
+            "seq_scan",
+            "Sequential scans",
+            "Number of sequential scans initiated on this table",
+        ),
     ]
 
     def get_stats(self):
-        '''
+        """
         Fetches the statistics.
 
         Returns a dictionary mapping the database name to another dictionary
         which in turn maps the different values to the counters.
-        '''
+        """
         # we need to get stats for each DB. We need to create new connections
         # for each.
         dbnames = self.all_databases
@@ -1214,17 +1291,16 @@ class ScanTypes(PostgresPlugin):
         for dbname in dbnames:
             try:
                 localcon = connect(
-                    construct_dsn(dbname,
-                                  self.user,
-                                  self.password,
-                                  self.host,
-                                  self.port))
+                    construct_dsn(
+                        dbname, self.user, self.password, self.host, self.port
+                    )
+                )
             except Exception as exc:
                 LOG.error(exc)
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['scan_types'])
+            cursor.execute(self.queries["scan_types"])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1232,15 +1308,15 @@ class ScanTypes(PostgresPlugin):
 
     def _print_values(self, values):
         for field, _, _ in self.FIELDS:
-            print('%s.value %s' % (field, values.get(field, 0) or 0))
+            print("%s.value %s" % (field, values.get(field, 0) or 0))
 
     def _graph_config(self):
         for name, label, info in self.FIELDS:
-            print('%s.label %s' % (name, label))
-            print('%s.info %s' % (name, info))
-            print('%s.min 0' % name)
-            print('%s.type DERIVE' % name)
-            print('%s.draw LINE1' % name)
+            print("%s.label %s" % (name, label))
+            print("%s.info %s" % (name, info))
+            print("%s.min 0" % name)
+            print("%s.type DERIVE" % name)
+            print("%s.draw LINE1" % name)
 
     def fetch(self):
         super(ScanTypes, self).fetch()
@@ -1255,49 +1331,55 @@ class ScanTypes(PostgresPlugin):
         self._print_values(sums)
 
         for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
             self._print_values(stats.get(dbname, {}))
 
     def config(self):
         super(ScanTypes, self).config()
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             graph_args --base 1000
             graph_vlabel \# of scans per ${graph_period}
             graph_printf %3.0lf
             graph_scale no
-            '''))
+            """
+            )
+        )
         self._graph_config()
 
         for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('graph_title %s for %s' % (self.TITLE, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("graph_title %s for %s" % (self.TITLE, dbname))
             self._graph_config()
 
 
 class RowAccess(PostgresPlugin):
-    '''
+    """
     This can be merged with ScanTypes as they both access the same statistics
     table!
-    '''
+    """
 
-    NAME = 'row_access'
-    TITLE = 'Row Access'
+    NAME = "row_access"
+    TITLE = "Row Access"
     FIELDS = [
-        ('n_tup_ins', 'Inserts', 'Number of rows inserted'),
-        ('n_tup_upd', 'Updates', 'Number of rows updated'),
-        ('n_tup_del', 'Deletes', 'Number of rows deleted'),
-        ('n_tup_hot_upd', 'HOT Updates',
-         'Number of rows HOT updated (i.e., with no separate index update '
-         'required)'),
+        ("n_tup_ins", "Inserts", "Number of rows inserted"),
+        ("n_tup_upd", "Updates", "Number of rows updated"),
+        ("n_tup_del", "Deletes", "Number of rows deleted"),
+        (
+            "n_tup_hot_upd",
+            "HOT Updates",
+            "Number of rows HOT updated (i.e., with no separate index update "
+            "required)",
+        ),
     ]
 
     def get_stats(self):
-        '''
+        """
         Retrieve the stats and return them as dictionary mapping the database
         name to another dictionary which in turn maps the statistics colums to
         their values.
-        '''
+        """
         # we need to get stats for each DB. We need to create new connections
         # for each.
         dbnames = self.all_databases
@@ -1306,17 +1388,16 @@ class RowAccess(PostgresPlugin):
         for dbname in dbnames:
             try:
                 localcon = connect(
-                    construct_dsn(dbname,
-                                  self.user,
-                                  self.password,
-                                  self.host,
-                                  self.port))
+                    construct_dsn(
+                        dbname, self.user, self.password, self.host, self.port
+                    )
+                )
             except Exception as exc:
                 LOG.error(exc)
                 continue
 
             cursor = localcon.cursor(cursor_factory=DictCursor)
-            cursor.execute(self.queries['row_access'])
+            cursor.execute(self.queries["row_access"])
             stats[dbname] = cursor.fetchone() or {}
             cursor.close()
             localcon.close()
@@ -1324,16 +1405,16 @@ class RowAccess(PostgresPlugin):
 
     def _print_values(self, values):
         for field, _, _ in self.FIELDS:
-            print('%s.value %s' % (field, values.get(field, 0) or 0))
+            print("%s.value %s" % (field, values.get(field, 0) or 0))
 
     def _graph_config(self):
         first_graph = True
         for name, label, info in self.FIELDS:
-            print('%s.label %s' % (name, label))
-            print('%s.info %s' % (name, info))
-            print('%s.min 0' % name)
-            print('%s.type DERIVE' % name)
-            print('%s.draw %s' % (name, 'AREA' if first_graph else 'STACK'))
+            print("%s.label %s" % (name, label))
+            print("%s.info %s" % (name, info))
+            print("%s.min 0" % name)
+            print("%s.type DERIVE" % name)
+            print("%s.draw %s" % (name, "AREA" if first_graph else "STACK"))
             first_graph = False
 
     def fetch(self):
@@ -1349,41 +1430,44 @@ class RowAccess(PostgresPlugin):
         self._print_values(sums)
 
         for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
             self._print_values(stats.get(dbname, {}))
 
     def config(self):
         super(RowAccess, self).config()
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             graph_args --base 1000
             graph_vlabel \# of rows
             graph_printf %3.0lf
             graph_scale no
-            '''))
+            """
+            )
+        )
         self._graph_config()
 
         for dbname in self.all_databases:
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('graph_title %s for %s' % (self.TITLE, dbname))
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("graph_title %s for %s" % (self.TITLE, dbname))
             self._graph_config()
 
 
 class Transactions(PostgresPlugin):
-    '''
+    """
     TODO can be merged with Locks and Sizes (they use the same view).
-    '''
+    """
 
-    NAME = 'transactions'
-    TITLE = 'Transactions'
+    NAME = "transactions"
+    TITLE = "Transactions"
 
     def get_stats(self):
-        '''
+        """
         Fetch the statistics returning a dictionary mapping the database name
         to :py:class:`.TxStats` instances.
-        '''
+        """
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['transactions'])
+        cursor.execute(self.queries["transactions"])
 
         stats = cursor.fetchall()
         cursor.close()
@@ -1395,26 +1479,30 @@ class Transactions(PostgresPlugin):
 
         total_committed = sum([v.committed for v in stats.values()])
         total_rolled_back = sum([v.rolled_back for v in stats.values()])
-        print('committed.value %s' % total_committed)
-        print('rollback.value %s' % total_rolled_back)
+        print("committed.value %s" % total_committed)
+        print("rollback.value %s" % total_rolled_back)
 
         for dbname, value in stats.items():
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('committed.value %s' % value.committed)
-            print('rollback.value %s' % value.rolled_back)
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("committed.value %s" % value.committed)
+            print("rollback.value %s" % value.rolled_back)
 
     def config(self):
         super(Transactions, self).config()
         stats = self.get_stats()
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             graph_args --base 1000
             graph_scale no
             graph_vlabel \# transactions
-            '''))
+            """
+            )
+        )
 
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             committed.label Committed Transactions
             committed.draw AREA
             committed.min 0
@@ -1423,11 +1511,13 @@ class Transactions(PostgresPlugin):
             rollback.draw STACK
             rollback.min 0
             rollback.type DERIVE
-            '''))
+            """
+            )
+        )
 
         # Scale each graph relative to the biggest DB
         template = dedent(
-            '''\
+            """\
             multigraph {graph_name}.{dbname}
             graph_title {title} for {dbname}
             graph_args --base 1000
@@ -1439,28 +1529,31 @@ class Transactions(PostgresPlugin):
             rollback.draw STACK
             rollback.label Rolled back Transactions
             rollback.type DERIVE
-            ''')
+            """
+        )
         for dbname in stats:
-            print(template.format(title=self.TITLE,
-                                  graph_name=self.graph_name,
-                                  dbname=dbname))
+            print(
+                template.format(
+                    title=self.TITLE, graph_name=self.graph_name, dbname=dbname
+                )
+            )
 
 
 class TempBytes(PostgresPlugin):
-    '''
+    """
     Graphs diskspace occupied by temporary files.
-    '''
+    """
 
-    NAME = 'temp_bytes'
-    TITLE = 'Change in Temporary Files'
+    NAME = "temp_bytes"
+    TITLE = "Change in Temporary Files"
 
     def get_stats(self):
-        '''
+        """
         Fetch the statistics returning a dictionary mapping the database name
         to :py:class:`.TempBytesRow` instances.
-        '''
+        """
         cursor = self.connection.cursor()
-        cursor.execute(self.queries['temp_bytes'])
+        cursor.execute(self.queries["temp_bytes"])
 
         stats = cursor.fetchall()
         cursor.close()
@@ -1471,33 +1564,39 @@ class TempBytes(PostgresPlugin):
         stats = self.get_stats()
 
         total_diskspace = sum([v.bytes for v in stats.values()])
-        print('bytes.value %s' % total_diskspace)
+        print("bytes.value %s" % total_diskspace)
 
         for dbname, value in stats.items():
-            print('multigraph %s.%s' % (self.graph_name, dbname))
-            print('bytes.value %s' % value.bytes)
+            print("multigraph %s.%s" % (self.graph_name, dbname))
+            print("bytes.value %s" % value.bytes)
 
     def config(self):
         super(TempBytes, self).config()
         stats = self.get_stats()
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             graph_args --base 1024
             graph_scale yes
             graph_vlabel Change of Temp Files Size
-            '''))
+            """
+            )
+        )
 
-        print(dedent(
-            '''\
+        print(
+            dedent(
+                """\
             bytes.label Used diskspace
             bytes.draw AREA
             bytes.min 0
             bytes.type DERIVE
-            '''))
+            """
+            )
+        )
 
         # Scale each graph relative to the biggest DB
         template = dedent(
-            '''\
+            """\
             multigraph {graph_name}.{dbname}
             graph_title {title} for {dbname}
             graph_args --base 1024
@@ -1505,85 +1604,84 @@ class TempBytes(PostgresPlugin):
             bytes.draw AREA
             bytes.label Used diskspace
             bytes.type DERIVE
-            ''')
+            """
+        )
         for dbname in stats:
-            print(template.format(title=self.TITLE,
-                                  graph_name=self.graph_name,
-                                  dbname=dbname))
+            print(
+                template.format(
+                    title=self.TITLE, graph_name=self.graph_name, dbname=dbname
+                )
+            )
 
 
 def get_pg_version(connection):
-    '''
+    """
     Returns the posgtes server version as a tuple of integers.
 
     Example:
 
     >>> get_pg_version(conn)
     (9, 5, 8)
-    '''
+    """
     with connection.cursor() as cursor:
         # See https://www.postgresql.org/docs/current/libpq-status.html#LIBPQ-PQSERVERVERSION
         cursor.execute("SELECT current_setting('server_version_num')")
         version_num = int(cursor.fetchone()[0])
-        cursor.execute('SHOW server_version')
+        cursor.execute("SHOW server_version")
         if version_num < 100_000:
             major = version_num // 10000
             minor = (version_num % 10000) // 100
         else:
-            major = version_num//10000
+            major = version_num // 10000
             minor = version_num % 10000
     return major, minor, 0
 
 
 def main():
-    '''
+    """
     The main entry point of the application.
 
     :param action: The munin-action to perform.
-    '''
+    """
 
     logging.basicConfig()
     args = parse_args()
 
-    if args.action == 'autoconf':
+    if args.action == "autoconf":
         if PSYCOPG2_AVAILABLE:
             # All we need to be able to run is the psycopg2 module. That
             # check is covered by the top-level imports.
-            print('yes')
+            print("yes")
         else:
-            print('no (Python module psycopg2 is required)')
+            print("no (Python module psycopg2 is required)")
         return 0
 
     if not PSYCOPG2_AVAILABLE:
-        print('Python module psycopg2 is required')
+        print("Python module psycopg2 is required")
         return 1
 
-    dbname = getenv('PG_DBNAME', 'template1')
-    user = getenv('PG_USER', 'postgres')
-    password = getenv('PG_PASSWORD', '')
-    host = getenv('PG_HOST', '')
-    port = int(getenv('PG_PORT', 0))
-    selected_plugins = getenv('PG_MULTIGRAPHS', '__all__')
-    selected_plugins = {name.strip() for name in selected_plugins.split(',')}
+    dbname = getenv("PG_DBNAME", "template1")
+    user = getenv("PG_USER", "postgres")
+    password = getenv("PG_PASSWORD", "")
+    host = getenv("PG_HOST", "")
+    port = int(getenv("PG_PORT", 0))
+    selected_plugins = getenv("PG_MULTIGRAPHS", "__all__")
+    selected_plugins = {name.strip() for name in selected_plugins.split(",")}
 
     available_plugins = find_subclasses(PostgresPlugin)
-    if '__all__' in selected_plugins:
+    if "__all__" in selected_plugins:
         active_plugins = available_plugins
     else:
-        active_plugins = [plugin for plugin in available_plugins
-                          if plugin.NAME in selected_plugins]
+        active_plugins = [
+            plugin for plugin in available_plugins if plugin.NAME in selected_plugins
+        ]
 
-    connection = connect(construct_dsn(
-        dbname,
-        user,
-        password,
-        host,
-        port))
+    connection = connect(construct_dsn(dbname, user, password, host, port))
 
     try:
         for cls in active_plugins:
             instance = cls(connection, user, password, host, port)
-            if args.action == 'config':
+            if args.action == "config":
                 instance.config()
             else:
                 instance.fetch()
@@ -1593,5 +1691,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
